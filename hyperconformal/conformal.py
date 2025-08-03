@@ -93,9 +93,9 @@ class ClassificationConformalPredictor(ConformalPredictor):
                 if len(true_label_pos) > 0:
                     pos = true_label_pos[0].item()
                     cumsum_probs[i] = torch.sum(sorted_probs[i, :pos])
-                    # Add randomization for ties
+                    # Add deterministic midpoint for reproducible scoring
                     label_ranks[i] = cumsum_probs[i] + \
-                                   torch.rand(1).item() * sorted_probs[i, pos]
+                                   0.5 * sorted_probs[i, pos]
                 else:
                     label_ranks[i] = 1.0  # Maximum score if label not found
             
@@ -247,7 +247,7 @@ class AdaptiveConformalPredictor(ConformalPredictor):
     
     def get_current_coverage_estimate(self) -> Optional[float]:
         """Estimate current coverage based on recent data."""
-        if len(self.scores_buffer) < 10:
+        if len(self.scores_buffer) < 10 or self.quantile is None:
             return None
         
         scores = torch.tensor(list(self.scores_buffer))

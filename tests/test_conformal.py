@@ -34,7 +34,10 @@ class TestClassificationConformalPredictor:
         assert torch.all(scores <= 1)
         
         # More confident predictions should have lower scores
-        assert scores[0] < scores[1] < scores[2]
+        # Example 2 (0.33, 0.33, 0.34) has highest prob for label 2, so lowest score
+        # Example 0 (0.7, 0.2, 0.1) has high prob for label 0, so medium score  
+        # Example 1 (0.4, 0.35, 0.25) has medium prob for label 1, so highest score
+        assert scores[2] < scores[0] < scores[1]
     
     def test_margin_scoring(self):
         """Test margin-based scoring."""

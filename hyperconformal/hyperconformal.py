@@ -120,6 +120,9 @@ class ConformalHDC:
             self.class_prototypes = self.class_prototypes / \
                 torch.norm(self.class_prototypes, dim=-1, keepdim=True)
         
+        # Mark as fitted before computing predictions
+        self.is_fitted = True
+        
         # Compute training accuracy
         train_predictions = self._predict_proba(X_train)
         train_pred_classes = torch.argmax(train_predictions, dim=1)
@@ -137,7 +140,6 @@ class ConformalHDC:
         ) / len(cal_pred_sets)
         self.calibration_coverage = cal_coverage
         
-        self.is_fitted = True
         return self
     
     def _predict_proba(self, X: torch.Tensor) -> torch.Tensor:
