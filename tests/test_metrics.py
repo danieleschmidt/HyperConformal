@@ -140,7 +140,7 @@ class TestAdvancedMetrics:
         true_labels = [0, 1, 2]
         
         cwc_penalty = coverage_width_criterion(prediction_sets, true_labels, target_coverage=0.9)
-        assert cwc_penalty > 1000  # Should have large penalty
+        assert cwc_penalty > 900  # Should have large penalty (901 = 1 + 1000*0.9)
     
     def test_calibration_score(self):
         """Test calibration score (ECE)."""
@@ -181,7 +181,7 @@ class TestAdvancedMetrics:
         
         # Check coverage is perfect
         assert metrics['coverage'] == 1.0
-        assert metrics['coverage_gap'] == -0.1  # Better than target
+        assert abs(metrics['coverage_gap'] - (-0.1)) < 1e-10  # Better than target
         
         # Check class-specific coverage
         assert metrics['coverage_class_0'] == 1.0

@@ -30,6 +30,9 @@ def coverage_score(
     if len(prediction_sets) != len(true_labels):
         raise ValueError("Number of prediction sets must match number of labels")
     
+    if len(prediction_sets) == 0:
+        return 0.0
+    
     covered = sum(
         1 for i, pred_set in enumerate(prediction_sets)
         if true_labels[i] in pred_set
