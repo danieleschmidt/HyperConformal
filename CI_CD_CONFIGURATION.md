@@ -1,3 +1,10 @@
+# CI/CD Pipeline Configuration for HyperConformal
+
+## GitHub Actions Workflow Configuration
+
+**Note**: This configuration requires `workflows` permission to be added to the repository. A user with admin access should create this file at `.github/workflows/ci.yml`.
+
+```yaml
 name: Continuous Integration
 
 on:
@@ -155,3 +162,39 @@ jobs:
         # Placeholder for documentation build
         echo "Documentation check placeholder"
         python -c "import hyperconformal; help(hyperconformal)"
+```
+
+## Setup Instructions
+
+1. **Enable Workflows Permission**: A repository admin needs to grant the GitHub App `workflows` permission
+2. **Create Workflow File**: Save the above configuration as `.github/workflows/ci.yml`
+3. **Configure Secrets**: Add any necessary secrets to the repository settings
+4. **Test Pipeline**: Create a pull request to test the CI/CD pipeline
+
+## Local Testing Commands
+
+Before pushing to trigger CI, test locally:
+
+```bash
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run the comprehensive test runner
+python scripts/run_tests.py --suite all
+
+# Run specific test suites
+python scripts/run_tests.py --suite unit
+python scripts/run_tests.py --suite integration
+python scripts/run_tests.py --suite quality
+```
+
+## Pipeline Features
+
+- **Multi-Python Testing**: Validates compatibility across Python 3.8-3.11
+- **Quality Gates**: Automated code formatting, linting, and type checking
+- **Coverage Reporting**: Ensures 85%+ test coverage requirement
+- **Security Scanning**: Vulnerability detection with bandit and safety
+- **Performance Monitoring**: Automated benchmark execution
+- **Artifact Collection**: Test reports and performance metrics
+
+The pipeline is designed to prevent regression and maintain code quality standards automatically.
