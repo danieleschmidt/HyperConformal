@@ -45,6 +45,7 @@ class ConformalPredictor(ABC):
         # Compute (1-alpha)(1+1/n) quantile as per theory
         n = len(self.calibration_scores)
         level = np.ceil((n + 1) * (1 - self.alpha)) / n
+        level = min(level, 1.0)  # Ensure level doesn't exceed 1.0
         self.quantile = torch.quantile(self.calibration_scores, level)
     
     @abstractmethod
@@ -227,6 +228,7 @@ class AdaptiveConformalPredictor(ConformalPredictor):
         scores_tensor = torch.tensor(list(self.scores_buffer))
         n = len(scores_tensor)
         level = np.ceil((n + 1) * (1 - self.alpha)) / n
+        level = min(level, 1.0)  # Ensure level doesn't exceed 1.0
         self.quantile = torch.quantile(scores_tensor, level)
     
     def predict_set(

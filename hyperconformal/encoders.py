@@ -84,7 +84,7 @@ class RandomProjection(BaseEncoder):
         # Apply projection
         if self.quantization == 'complex':
             # For complex, input should be real
-            projected = torch.matmul(x.float(), self.projection_matrix)
+            projected = torch.matmul(x.float().to(torch.complex64), self.projection_matrix)
         else:
             projected = torch.matmul(x, self.projection_matrix)
         
@@ -140,7 +140,7 @@ class LevelHDC(BaseEncoder):
             # For circular encoding, create smooth transitions
             for i in range(input_dim):
                 for j in range(levels):
-                    angle = 2 * np.pi * j / levels
+                    angle = torch.tensor(2 * np.pi * j / levels)
                     self.base_hvs[i, j] = torch.cos(angle) * self.base_hvs[i, 0] + \
                                          torch.sin(angle) * self.base_hvs[i, 1]
     

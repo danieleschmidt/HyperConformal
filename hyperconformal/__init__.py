@@ -9,8 +9,9 @@ This package provides:
 """
 
 from .encoders import BaseEncoder, RandomProjection, LevelHDC, ComplexHDC
-from .conformal import ConformalPredictor, AdaptiveConformalPredictor
+from .conformal import ConformalPredictor, AdaptiveConformalPredictor, ClassificationConformalPredictor
 from .hyperconformal import ConformalHDC, AdaptiveConformalHDC
+from .optimized import OptimizedConformalHDC, ScalableAdaptiveConformalHDC
 from .utils import compute_coverage, hamming_distance, binary_quantize
 from .metrics import coverage_score, average_set_size, conditional_coverage
 
@@ -24,8 +25,11 @@ __all__ = [
     "ComplexHDC",
     "ConformalPredictor",
     "AdaptiveConformalPredictor",
+    "ClassificationConformalPredictor",
     "ConformalHDC",
     "AdaptiveConformalHDC",
+    "OptimizedConformalHDC",
+    "ScalableAdaptiveConformalHDC",
     "compute_coverage",
     "hamming_distance",
     "binary_quantize",
