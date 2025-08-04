@@ -352,9 +352,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ```bibtex
 @software{hyperconformal2025,
   title={HyperConformal: Bringing Conformal Prediction to Hyperdimensional Computing},
-  author={Your Name and Collaborators},
+  author={Daniel Schmidt},
   year={2025},
-  url={https://github.com/yourusername/hyperconformal}
+  url={https://github.com/danieleschmidt/hyperconformal}
 }
 ```
 
