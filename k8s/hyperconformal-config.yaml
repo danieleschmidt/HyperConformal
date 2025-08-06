@@ -1,0 +1,359 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hyperconformal
+  labels:
+    name: hyperconformal
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hyperconformal-sa
+  namespace: hyperconformal
+automountServiceAccountToken: true
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: hyperconformal
+  name: hyperconformal-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hyperconformal-rolebinding
+  namespace: hyperconformal
+subjects:
+- kind: ServiceAccount
+  name: hyperconformal-sa
+  namespace: hyperconformal
+roleRef:
+  kind: Role
+  name: hyperconformal-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hyperconformal-config
+  namespace: hyperconformal
+data:
+  workers: "4"
+  log_level: "INFO"
+  prometheus_pushgateway: "http://prometheus-pushgateway:9091"
+  redis_host: "redis-service"
+  redis_port: "6379"
+  model_cache_size: "1000"
+  batch_size: "32"
+  max_memory_gb: "3.5"
+  enable_monitoring: "true"
+  enable_tracing: "true"
+  enable_security: "true"
+  security_level: "medium"
+  # Feature flags
+  enable_neuromorphic: "false"
+  enable_streaming: "true"
+  enable_distributed: "true"
+  enable_optimization: "true"
+  # Performance settings
+  cuda_enabled: "false"
+  numba_enabled: "false"
+  memory_mapping: "true"
+  compression_enabled: "true"
+  # Deployment settings
+  deployment_region: "us-west-2"
+  deployment_environment: "production"
+  deployment_version: "1.0.0"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hyperconformal-secrets
+  namespace: hyperconformal
+type: Opaque
+data:
+  # Base64 encoded values - replace with actual values
+  redis_url: cmVkaXM6Ly9yZWRpcy1zZXJ2aWNlOjYzNzk=  # redis://redis-service:6379
+  secret_key: aHlwZXJjb25mb3JtYWxfc2VjcmV0X2tleSQ=  # hyperconformal_secret_key$
+  api_key: aHlwZXJjb25mb3JtYWxfYXBpX2tleSQ=  # hyperconformal_api_key$
+  db_password: aHlwZXJjb25mb3JtYWxfZGJfcGFzcyQ=  # hyperconformal_db_pass$
+  tls_cert: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t  # TLS certificate
+  tls_key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t  # TLS private key
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hyperconformal-models-pvc
+  namespace: hyperconformal
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: fast-ssd
+  resources:
+    requests:
+      storage: 100Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hyperconformal-data-pvc
+  namespace: hyperconformal
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Ti
+
+---
+# Redis deployment for caching and coordination
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-deployment
+  namespace: hyperconformal
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        args:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - "1gb"
+        - --maxmemory-policy
+        - "allkeys-lru"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-data-pvc
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data-pvc
+  namespace: hyperconformal
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: hyperconformal
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+  selector:
+    app: redis
+
+---
+# Network policies for security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hyperconformal-network-policy
+  namespace: hyperconformal
+spec:
+  podSelector:
+    matchLabels:
+      app: hyperconformal
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector:
+        matchLabels:
+          app: hyperconformal
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+
+---
+# Monitoring ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hyperconformal-monitor
+  namespace: hyperconformal
+  labels:
+    app: hyperconformal
+spec:
+  selector:
+    matchLabels:
+      app: hyperconformal
+      component: main
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+    honorLabels: true
+  namespaceSelector:
+    matchNames:
+    - hyperconformal
+
+---
+# Custom Resource Definition for HyperConformal Models
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: hyperconformalmodels.hyperconformal.io
+spec:
+  group: hyperconformal.io
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              modelName:
+                type: string
+              version:
+                type: string
+              encoder:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: ["RandomProjection", "LevelHDC", "ComplexHDC"]
+                  inputDim:
+                    type: integer
+                  hvDim:
+                    type: integer
+                    default: 10000
+                  quantization:
+                    type: string
+                    enum: ["binary", "ternary", "continuous"]
+                    default: "binary"
+              conformal:
+                type: object
+                properties:
+                  alpha:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                    default: 0.1
+                  scoreType:
+                    type: string
+                    enum: ["aps", "margin", "inverse_softmax"]
+                    default: "aps"
+              resources:
+                type: object
+                properties:
+                  memory:
+                    type: string
+                    default: "2Gi"
+                  cpu:
+                    type: string
+                    default: "1000m"
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+                enum: ["Pending", "Training", "Ready", "Failed"]
+              accuracy:
+                type: number
+              coverage:
+                type: number
+              lastUpdated:
+                type: string
+                format: date-time
+  scope: Namespaced
+  names:
+    plural: hyperconformalmodels
+    singular: hyperconformalmodel
+    kind: HyperConformalModel
+    shortNames:
+    - hcm
