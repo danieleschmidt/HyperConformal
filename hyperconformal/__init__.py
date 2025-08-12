@@ -52,3 +52,19 @@ if NEUROMORPHIC_AVAILABLE:
         "SpikingConformalPredictor", 
         "NeuromorphicConformalHDC"
     ])
+
+# Global-first implementation
+try:
+    from .i18n import _, set_language
+    from .compliance import ComplianceManager, DataRegion, ConsentType
+    from .cross_platform import PlatformConfig, OptimizedOperations
+    GLOBAL_FEATURES_AVAILABLE = True
+except ImportError:
+    GLOBAL_FEATURES_AVAILABLE = False
+
+if GLOBAL_FEATURES_AVAILABLE:
+    __all__.extend([
+        "_", "set_language",
+        "ComplianceManager", "DataRegion", "ConsentType", 
+        "PlatformConfig", "OptimizedOperations"
+    ])
