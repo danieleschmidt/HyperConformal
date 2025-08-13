@@ -19,18 +19,47 @@ def test_hamming_distance():
     print("✅ Hamming distance tests passed")
 
 def test_conformal_quantile():
-    """Test conformal prediction quantile calculation."""
-    def compute_quantile(scores, alpha):
+    """Test conformal prediction quantile calculation with multiple algorithms."""
+    
+    # Standard conformal quantile (Vovk et al.)
+    def compute_quantile_standard(scores, alpha):
         n = len(scores)
         q_index = math.ceil((n + 1) * (1 - alpha)) - 1
         return sorted(scores)[max(0, min(q_index, n - 1))]
     
+    # Enhanced quantile with interpolation (research improvement)
+    def compute_quantile_enhanced(scores, alpha):
+        n = len(scores)
+        sorted_scores = sorted(scores)
+        exact_index = (n + 1) * (1 - alpha) - 1
+        
+        if exact_index < 0:
+            return sorted_scores[0]
+        elif exact_index >= n - 1:
+            return sorted_scores[-1]
+        else:
+            # Linear interpolation for fractional indices
+            lower_idx = int(exact_index)
+            upper_idx = min(lower_idx + 1, n - 1)
+            weight = exact_index - lower_idx
+            return sorted_scores[lower_idx] * (1 - weight) + sorted_scores[upper_idx] * weight
+    
     # Test case: alpha=0.1 (90% coverage)
     scores = [0.1, 0.3, 0.5, 0.7, 0.9]
-    quantile = compute_quantile(scores, 0.1)
-    expected = 0.7  # For 90% coverage with 5 points
-    assert abs(quantile - expected) < 0.01
-    print("✅ Conformal quantile tests passed")
+    
+    # Test standard algorithm
+    quantile_std = compute_quantile_standard(scores, 0.1)
+    # With n=5, (n+1)*(1-alpha) = 6*0.9 = 5.4, ceil(5.4)-1 = 4, so scores[4] = 0.9
+    expected_std = 0.9
+    assert abs(quantile_std - expected_std) < 0.01, f"Standard: got {quantile_std}, expected {expected_std}"
+    
+    # Test enhanced algorithm
+    quantile_enh = compute_quantile_enhanced(scores, 0.1)
+    # Exact index = 5.4 - 1 = 4.4, interpolate between scores[4]=0.9 and scores[4]=0.9
+    expected_enh = 0.9  # Same in this case but more precise for fractional indices
+    assert abs(quantile_enh - expected_enh) < 0.01, f"Enhanced: got {quantile_enh}, expected {expected_enh}"
+    
+    print("✅ Conformal quantile tests passed (standard and enhanced algorithms)")
 
 def test_coverage_guarantee():
     """Test empirical coverage of conformal prediction."""
@@ -52,7 +81,7 @@ def test_coverage_guarantee():
             q_index = math.ceil((n + 1) * (1 - alpha)) - 1
             quantile = sorted(calibration_scores)[max(0, min(q_index, n - 1))]
             
-            prediction_set = [i for i, score in enumerate(scores) if score >= quantile]
+            prediction_set = [i for i, score in enumerate(scores) if score <= quantile]
             
             if true_label in prediction_set:
                 covered += 1
