@@ -30,7 +30,7 @@ class TestHyperConformalStructure(unittest.TestCase):
         ]
         
         for file_path in required_files:
-            full_path = self.repo_root / file_path
+            full_path = Path(file_path)
             self.assertTrue(full_path.exists(), f"Missing required file: {file_path}")
     
     def test_python_syntax_validity(self):
