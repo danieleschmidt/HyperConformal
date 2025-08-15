@@ -1,12 +1,12 @@
 {
-  "timestamp": 1755093796.3398068,
-  "overall_readiness_score": 0.7634848484848484,
+  "timestamp": 1755212685.1988475,
+  "overall_readiness_score": 0.7816666666666666,
   "deployment_recommendation": "READY_FOR_STAGING",
   "validation_results": {
     "comprehensive_tests": {
-      "passed": 10,
+      "passed": 11,
       "total": 11,
-      "success_rate": 0.9090909090909091,
+      "success_rate": 1.0,
       "details": {
         "Generation 1 - Basic Tests": {
           "status": "PASSED",
@@ -21,8 +21,8 @@
           "output_length": 369
         },
         "Generation 2 - Error Handling": {
-          "status": "FAILED",
-          "error": "Traceback (most recent call last):\n  File \"/root/repo/robust_error_handling.py\", line 152, in <module>\n    class InputValidator:\n  File \"/root/repo/robust_error_handling.py\", line 156, in InputValidat"
+          "status": "PASSED",
+          "output_length": 407
         },
         "Generation 2 - Security Framework": {
           "status": "PASSED",
@@ -34,7 +34,7 @@
         },
         "Generation 2 - Integration Tests": {
           "status": "PASSED",
-          "output_length": 205
+          "output_length": 204
         },
         "Generation 3 - Performance Optimization": {
           "status": "PASSED",
@@ -42,11 +42,11 @@
         },
         "Generation 3 - Concurrent Processing": {
           "status": "PASSED",
-          "output_length": 782
+          "output_length": 783
         },
         "Generation 3 - Auto-scaling": {
           "status": "PASSED",
-          "output_length": 1135
+          "output_length": 1137
         },
         "Generation 3 - Benchmarks": {
           "status": "PASSED",
@@ -59,6 +59,11 @@
       "total_files": 24,
       "security_score": 0.7083333333333334,
       "details": [
+        {
+          "file": "advanced_research_benchmarks.py",
+          "status": "SECURE",
+          "issues": []
+        },
         {
           "file": "advanced_research_features.py",
           "status": "SECURE",
@@ -200,11 +205,6 @@
           "file": "validate_setup.py",
           "status": "SECURE",
           "issues": []
-        },
-        {
-          "file": "advanced_research_benchmarks.py",
-          "status": "SECURE",
-          "issues": []
         }
       ]
     },
@@ -213,7 +213,7 @@
       "total_requirements": 5,
       "performance_score": 0.2,
       "metrics": {
-        "hdc_encoding_throughput": 2480.9,
+        "hdc_encoding_throughput": 2279.0,
         "conformal_prediction_speed": 0,
         "concurrent_speedup": 0,
         "cache_effectiveness": 0,
@@ -299,7 +299,7 @@
         },
         {
           "file": "robust_error_handling.py",
-          "size": 10172,
+          "size": 10165,
           "type": "utility"
         },
         {
@@ -354,7 +354,7 @@
         },
         {
           "file": "test_minimal.py",
-          "size": 4616,
+          "size": 4605,
           "type": "test"
         },
         {
@@ -382,7 +382,7 @@
   },
   "deployment_artifacts": {
     "total_count": 26,
-    "total_size_mb": 0.35384368896484375,
+    "total_size_mb": 0.35382652282714844,
     "artifact_types": {
       "core": 6,
       "utility": 8,
@@ -408,7 +408,7 @@
   "performance_characteristics": {
     "requirements_met": "1/5",
     "key_metrics": {
-      "hdc_encoding_throughput": 2480.9,
+      "hdc_encoding_throughput": 2279.0,
       "conformal_prediction_speed": 0,
       "concurrent_speedup": 0,
       "cache_effectiveness": 0,

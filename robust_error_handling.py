@@ -153,7 +153,7 @@ class InputValidator:
     """Comprehensive input validation with security checks."""
     
     @staticmethod
-    def validate_vector_input(data: Any, expected_length: Optional[int] = None) -> List[float]:
+    def validate_vector_input(data: Any, expected_length: Optional[int] = None) -> list:
         """Validate vector input with safety checks."""
         if data is None:
             raise ValidationError("Input data cannot be None")
