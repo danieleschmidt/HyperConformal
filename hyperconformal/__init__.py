@@ -68,3 +68,30 @@ if GLOBAL_FEATURES_AVAILABLE:
         "ComplianceManager", "DataRegion", "ConsentType", 
         "PlatformConfig", "OptimizedOperations"
     ])
+
+# Advanced research extensions
+try:
+    from .quantum import QuantumHyperConformal, QuantumHDCEncoder, QuantumConformalPredictor
+    from .federated import FederatedHyperConformal, FederatedClient, FederatedServer
+    from .adaptive_realtime import StreamingAdaptiveConformalHDC, AdaptiveConfig
+    from .neuromorphic_quantum import NeuromorphicQuantumHDC, HybridConformalPredictor
+    from .advanced_benchmarks import AdvancedBenchmarkSuite, BenchmarkConfig
+    ADVANCED_FEATURES_AVAILABLE = True
+except ImportError:
+    ADVANCED_FEATURES_AVAILABLE = False
+
+if ADVANCED_FEATURES_AVAILABLE:
+    __all__.extend([
+        "QuantumHyperConformal",
+        "QuantumHDCEncoder", 
+        "QuantumConformalPredictor",
+        "FederatedHyperConformal",
+        "FederatedClient",
+        "FederatedServer",
+        "StreamingAdaptiveConformalHDC",
+        "AdaptiveConfig",
+        "NeuromorphicQuantumHDC",
+        "HybridConformalPredictor",
+        "AdvancedBenchmarkSuite",
+        "BenchmarkConfig"
+    ])
