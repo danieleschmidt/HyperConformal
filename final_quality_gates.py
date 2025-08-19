@@ -206,48 +206,64 @@ class FinalQualityGates:
                 'scaling_efficiency': 0
             }
             
-            # Simple parsing of benchmark output
+            # Simple parsing of benchmark output with input validation
             lines = output.split('\\n')
             for line in lines:
+                # Sanitize line input to prevent injection
+                line = line.strip()[:1000]  # Limit line length
+                if not line or any(char in line for char in ['<', '>', '&', ';']):
+                    continue  # Skip potentially malicious lines
+                    
                 if 'vectors/s' in line and 'size_100' in line:
-                    # Extract HDC encoding throughput
+                    # Extract HDC encoding throughput with validation
                     try:
                         parts = line.split(',')
                         for part in parts:
                             if 'vectors/s' in part:
-                                performance_metrics['hdc_encoding_throughput'] = float(part.split()[0])
+                                # Validate numeric extraction
+                                numeric_part = part.split()[0]
+                                if numeric_part.replace('.', '').replace('-', '').isdigit():
+                                    performance_metrics['hdc_encoding_throughput'] = float(numeric_part)
                                 break
-                    except:
+                    except (ValueError, IndexError):
                         pass
                 
                 elif 'pred/s' in line and 'classes_10' in line:
-                    # Extract conformal prediction speed
+                    # Extract conformal prediction speed with validation
                     try:
                         parts = line.split(',')
                         for part in parts:
                             if 'pred/s' in part:
-                                performance_metrics['conformal_prediction_speed'] = float(part.split()[0])
+                                # Validate numeric extraction
+                                numeric_part = part.split()[0]
+                                if numeric_part.replace('.', '').replace('-', '').isdigit():
+                                    performance_metrics['conformal_prediction_speed'] = float(numeric_part)
                                 break
-                    except:
+                    except (ValueError, IndexError):
                         pass
                 
                 elif 'concurrent_speedup:' in line:
                     try:
-                        performance_metrics['concurrent_speedup'] = float(line.split(':')[1].strip())
-                    except:
+                        value_str = line.split(':')[1].strip()
+                        if value_str.replace('.', '').replace('-', '').isdigit():
+                            performance_metrics['concurrent_speedup'] = float(value_str)
+                    except (ValueError, IndexError):
                         pass
                 
                 elif 'Hit rate:' in line:
                     try:
                         hit_rate_str = line.split(':')[1].strip().replace('%', '')
-                        performance_metrics['cache_effectiveness'] = float(hit_rate_str) / 100
-                    except:
+                        if hit_rate_str.replace('.', '').isdigit():
+                            performance_metrics['cache_effectiveness'] = float(hit_rate_str) / 100
+                    except (ValueError, IndexError):
                         pass
                 
                 elif 'scaling_efficiency:' in line:
                     try:
-                        performance_metrics['scaling_efficiency'] = float(line.split(':')[1].strip())
-                    except:
+                        value_str = line.split(':')[1].strip()
+                        if value_str.replace('.', '').replace('-', '').isdigit():
+                            performance_metrics['scaling_efficiency'] = float(value_str)
+                    except (ValueError, IndexError):
                         pass
             
             # Define performance requirements

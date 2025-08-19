@@ -1,0 +1,861 @@
+# Enterprise Cost Optimization and Resource Management
+# Intelligent resource allocation and cost control for global scale
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hyperconformal-cost-optimization
+  labels:
+    name: hyperconformal-cost-optimization
+    purpose: cost-management
+
+---
+# Cost Optimization Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cost-optimization-config
+  namespace: hyperconformal-cost-optimization
+data:
+  cost-targets.yaml: |
+    cost_optimization:
+      targets:
+        monthly_budget_usd: 50000
+        cost_per_request_max: 0.001  # $0.001 per request
+        infrastructure_efficiency: 85  # 85% resource utilization
+        waste_threshold: 5  # Max 5% waste
+        
+      scaling_policies:
+        aggressive_downscaling: true
+        predictive_scaling: true
+        spot_instance_preference: 70  # 70% spot instances
+        reserved_instance_target: 20  # 20% reserved instances
+        
+      resource_limits:
+        max_pods_per_region: 1000
+        max_cpu_per_region: 5000  # vCPUs
+        max_memory_per_region: 10000  # GB
+        max_storage_per_region: 100000  # GB
+        
+      optimization_schedule:
+        business_hours: "09:00-17:00"
+        timezone: "UTC"
+        weekend_scaling: 0.3  # Scale to 30% on weekends
+        holiday_scaling: 0.2  # Scale to 20% on holidays
+        
+      alerts:
+        budget_threshold: 80  # Alert at 80% of budget
+        cost_spike_threshold: 150  # Alert if costs spike 150%
+        efficiency_threshold: 70  # Alert if efficiency drops below 70%
+
+---
+# Cost Monitoring Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cost-monitor
+  namespace: hyperconformal-cost-optimization
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cost-monitor
+  template:
+    metadata:
+      labels:
+        app: cost-monitor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: cost-monitor-sa
+      containers:
+      - name: cost-monitor
+        image: hyperconformal/cost-monitor:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8081
+          name: metrics
+        env:
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: COST_EXPLORER_ROLE_ARN
+          value: "arn:aws:iam::ACCOUNT-ID:role/cost-explorer-role"
+        - name: PROMETHEUS_URL
+          value: "http://prometheus.hyperconformal-monitoring.svc.cluster.local:9090"
+        - name: BUDGET_LIMIT
+          value: "50000"
+        - name: COLLECTION_INTERVAL
+          value: "300s"  # 5 minutes
+        - name: SLACK_WEBHOOK
+          valueFrom:
+            secretKeyRef:
+              name: cost-secrets
+              key: slack-webhook
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: cost-config
+          mountPath: /config
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: cost-config
+        configMap:
+          name: cost-optimization-config
+      - name: tmp
+        emptyDir: {}
+
+---
+# Resource Optimizer Controller
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resource-optimizer
+  namespace: hyperconformal-cost-optimization
+spec:
+  replicas: 1  # Single instance to avoid conflicts
+  selector:
+    matchLabels:
+      app: resource-optimizer
+  template:
+    metadata:
+      labels:
+        app: resource-optimizer
+    spec:
+      serviceAccountName: resource-optimizer-sa
+      containers:
+      - name: optimizer
+        image: hyperconformal/resource-optimizer:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: OPTIMIZATION_INTERVAL
+          value: "600s"  # 10 minutes
+        - name: DRY_RUN
+          value: "false"
+        - name: AGGRESSIVE_MODE
+          value: "true"
+        - name: MIN_REPLICAS
+          value: "1"
+        - name: MAX_REPLICAS
+          value: "1000"
+        - name: TARGET_CPU_UTILIZATION
+          value: "70"
+        - name: TARGET_MEMORY_UTILIZATION
+          value: "80"
+        - name: SPOT_INSTANCE_RATIO
+          value: "0.7"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+
+---
+# Spot Instance Manager
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spot-instance-manager
+  namespace: hyperconformal-cost-optimization
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: spot-instance-manager
+  template:
+    metadata:
+      labels:
+        app: spot-instance-manager
+    spec:
+      serviceAccountName: spot-manager-sa
+      containers:
+      - name: spot-manager
+        image: hyperconformal/spot-manager:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: SPOT_PRICE_THRESHOLD
+          value: "0.10"  # Max $0.10/hour
+        - name: DIVERSIFICATION_STRATEGY
+          value: "multi-az-multi-instance"
+        - name: SPOT_FLEET_TARGET_CAPACITY
+          value: "100"
+        - name: ON_DEMAND_PERCENTAGE
+          value: "30"
+        - name: INSTANCE_TYPES
+          value: "c6i.large,c6i.xlarge,c6i.2xlarge,m6i.large,m6i.xlarge"
+        - name: AWS_REGION
+          value: "us-east-1"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+
+---
+# ServiceAccounts and RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cost-monitor-sa
+  namespace: hyperconformal-cost-optimization
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/cost-monitor-role"
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: resource-optimizer-sa
+  namespace: hyperconformal-cost-optimization
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/resource-optimizer-role"
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spot-manager-sa
+  namespace: hyperconformal-cost-optimization
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/spot-manager-role"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cost-optimization-operator
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "nodes", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers", "verticalpodautoscalers"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+- apiGroups: ["custom.metrics.k8s.io"]
+  resources: ["*"]
+  verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cost-optimization-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cost-optimization-operator
+subjects:
+- kind: ServiceAccount
+  name: cost-monitor-sa
+  namespace: hyperconformal-cost-optimization
+- kind: ServiceAccount
+  name: resource-optimizer-sa
+  namespace: hyperconformal-cost-optimization
+- kind: ServiceAccount
+  name: spot-manager-sa
+  namespace: hyperconformal-cost-optimization
+
+---
+# Predictive Scaling Based on Historical Data
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: predictive-scaler
+  namespace: hyperconformal-cost-optimization
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: predictive-scaler
+  template:
+    metadata:
+      labels:
+        app: predictive-scaler
+    spec:
+      serviceAccountName: resource-optimizer-sa
+      containers:
+      - name: predictor
+        image: hyperconformal/predictive-scaler:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PREDICTION_WINDOW
+          value: "1h"
+        - name: HISTORICAL_DATA_DAYS
+          value: "30"
+        - name: CONFIDENCE_THRESHOLD
+          value: "0.8"
+        - name: SCALE_UP_THRESHOLD
+          value: "0.8"
+        - name: SCALE_DOWN_THRESHOLD
+          value: "0.4"
+        - name: ML_MODEL_PATH
+          value: "/models/scaling-predictor.pkl"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: ml-models
+          mountPath: /models
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: ml-models
+        persistentVolumeClaim:
+          claimName: ml-models-pvc
+      - name: tmp
+        emptyDir: {}
+
+---
+# Cost Alerting Rules
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cost-alerting-rules
+  namespace: hyperconformal-monitoring
+data:
+  cost-rules.yml: |
+    groups:
+    - name: cost.optimization
+      rules:
+      # Budget Alerts
+      - alert: BudgetThresholdExceeded
+        expr: hyperconformal_monthly_cost_usd / hyperconformal_monthly_budget_usd > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: finops
+        annotations:
+          summary: "Monthly budget threshold exceeded"
+          description: "Current monthly cost is {{ $value | humanizePercentage }} of budget"
+      
+      - alert: BudgetCriticalThreshold
+        expr: hyperconformal_monthly_cost_usd / hyperconformal_monthly_budget_usd > 0.95
+        for: 1m
+        labels:
+          severity: critical
+          team: finops
+        annotations:
+          summary: "Monthly budget critically exceeded"
+          description: "Current monthly cost is {{ $value | humanizePercentage }} of budget"
+      
+      # Cost Efficiency Alerts
+      - alert: ResourceUtilizationLow
+        expr: avg(hyperconformal_resource_utilization_percent) < 70
+        for: 15m
+        labels:
+          severity: warning
+          team: engineering
+        annotations:
+          summary: "Resource utilization below target"
+          description: "Average resource utilization is {{ $value }}%, below 70% target"
+      
+      - alert: CostPerRequestHigh
+        expr: hyperconformal_cost_per_request_usd > 0.001
+        for: 10m
+        labels:
+          severity: warning
+          team: engineering
+        annotations:
+          summary: "Cost per request above target"
+          description: "Cost per request is ${{ $value }}, above $0.001 target"
+      
+      # Waste Detection
+      - alert: ResourceWasteDetected
+        expr: hyperconformal_resource_waste_percent > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: finops
+        annotations:
+          summary: "Resource waste detected"
+          description: "{{ $value }}% of resources are being wasted"
+      
+      # Spot Instance Alerts
+      - alert: SpotInstanceTerminationHigh
+        expr: rate(hyperconformal_spot_instance_terminations_total[1h]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "High spot instance termination rate"
+          description: "Spot instance termination rate is {{ $value }}/hour"
+
+---
+# Cost Optimization CronJobs
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly-optimization
+  namespace: hyperconformal-cost-optimization
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: resource-optimizer-sa
+          containers:
+          - name: optimizer
+            image: hyperconformal/nightly-optimizer:latest
+            command: ["/bin/sh"]
+            args:
+            - -c
+            - |
+              echo "Starting nightly optimization..."
+              
+              # 1. Analyze resource usage patterns
+              python3 /scripts/analyze_usage_patterns.py
+              
+              # 2. Right-size underutilized resources
+              python3 /scripts/right_size_resources.py
+              
+              # 3. Optimize storage costs
+              python3 /scripts/optimize_storage.py
+              
+              # 4. Clean up unused resources
+              python3 /scripts/cleanup_unused_resources.py
+              
+              # 5. Update cost forecasts
+              python3 /scripts/update_cost_forecasts.py
+              
+              # 6. Generate optimization report
+              python3 /scripts/generate_optimization_report.py
+              
+              echo "Nightly optimization completed"
+            env:
+            - name: DRY_RUN
+              value: "false"
+            - name: AGGRESSIVE_OPTIMIZATION
+              value: "true"
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1001
+              capabilities:
+                drop:
+                - ALL
+            volumeMounts:
+            - name: optimization-scripts
+              mountPath: /scripts
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: optimization-scripts
+            configMap:
+              name: optimization-scripts
+              defaultMode: 0755
+          - name: tmp
+            emptyDir: {}
+          restartPolicy: OnFailure
+
+---
+# Weekend Scaling CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: weekend-downscaling
+  namespace: hyperconformal-cost-optimization
+spec:
+  schedule: "0 22 * * 5"  # Friday at 10 PM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: resource-optimizer-sa
+          containers:
+          - name: weekend-scaler
+            image: bitnami/kubectl:latest
+            command: ["/bin/sh"]
+            args:
+            - -c
+            - |
+              echo "Scaling down for weekend..."
+              
+              # Scale down production workloads to 30%
+              kubectl patch hpa hyperconformal-hpa -n hyperconformal-production \
+                --type merge \
+                -p '{"spec":{"minReplicas":3,"maxReplicas":300}}'
+              
+              # Scale down non-production environments to 10%
+              for ns in staging development; do
+                kubectl scale deployment --all --replicas=1 -n $ns || true
+              done
+              
+              echo "Weekend scaling completed"
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "50m"
+              limits:
+                memory: "256Mi"
+                cpu: "100m"
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1001
+              capabilities:
+                drop:
+                - ALL
+          restartPolicy: OnFailure
+
+---
+# Monday Scaling CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: monday-upscaling
+  namespace: hyperconformal-cost-optimization
+spec:
+  schedule: "0 6 * * 1"  # Monday at 6 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: resource-optimizer-sa
+          containers:
+          - name: monday-scaler
+            image: bitnami/kubectl:latest
+            command: ["/bin/sh"]
+            args:
+            - -c
+            - |
+              echo "Scaling up for weekday operations..."
+              
+              # Restore production workload scaling
+              kubectl patch hpa hyperconformal-hpa -n hyperconformal-production \
+                --type merge \
+                -p '{"spec":{"minReplicas":10,"maxReplicas":1000}}'
+              
+              # Scale up development environments
+              for ns in staging development; do
+                kubectl scale deployment --all --replicas=2 -n $ns || true
+              done
+              
+              echo "Monday scaling completed"
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "50m"
+              limits:
+                memory: "256Mi"
+                cpu: "100m"
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1001
+              capabilities:
+                drop:
+                - ALL
+          restartPolicy: OnFailure
+
+---
+# Resource Quotas for Cost Control
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: hyperconformal-production-quota
+  namespace: hyperconformal-production
+spec:
+  hard:
+    requests.cpu: "5000"
+    requests.memory: "10000Gi"
+    requests.storage: "100Ti"
+    pods: "1000"
+    persistentvolumeclaims: "100"
+    services.loadbalancers: "10"
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: hyperconformal-staging-quota
+  namespace: hyperconformal-staging
+spec:
+  hard:
+    requests.cpu: "500"
+    requests.memory: "1000Gi"
+    requests.storage: "10Ti"
+    pods: "100"
+    persistentvolumeclaims: "20"
+    services.loadbalancers: "2"
+
+---
+# Limit Ranges for Pod Resource Management
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: hyperconformal-production-limits
+  namespace: hyperconformal-production
+spec:
+  limits:
+  - type: Pod
+    max:
+      cpu: "8"
+      memory: "16Gi"
+    min:
+      cpu: "100m"
+      memory: "128Mi"
+  - type: Container
+    max:
+      cpu: "4"
+      memory: "8Gi"
+    min:
+      cpu: "50m"
+      memory: "64Mi"
+    default:
+      cpu: "500m"
+      memory: "512Mi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "128Mi"
+
+---
+# Cost Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cost-dashboard-config
+  namespace: hyperconformal-cost-optimization
+data:
+  cost-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "HyperConformal Cost Optimization Dashboard",
+        "tags": ["cost", "optimization", "finops"],
+        "refresh": "5m",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Monthly Cost vs Budget",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "hyperconformal_monthly_cost_usd",
+                "legendFormat": "Current Cost"
+              },
+              {
+                "expr": "hyperconformal_monthly_budget_usd",
+                "legendFormat": "Budget"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "currencyUSD",
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": 0},
+                    {"color": "yellow", "value": 40000},
+                    {"color": "red", "value": 47500}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 2,
+            "title": "Cost per Request",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "hyperconformal_cost_per_request_usd",
+                "legendFormat": "Cost per Request"
+              },
+              {
+                "expr": "0.001",
+                "legendFormat": "Target"
+              }
+            ],
+            "yAxes": [
+              {
+                "unit": "currencyUSD",
+                "min": 0
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Resource Utilization by Region",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "hyperconformal_resource_utilization_percent",
+                "legendFormat": "{{region}}"
+              }
+            ],
+            "yAxes": [
+              {
+                "unit": "percent",
+                "min": 0,
+                "max": 100
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "title": "Spot vs On-Demand Cost Savings",
+            "type": "pie",
+            "targets": [
+              {
+                "expr": "hyperconformal_spot_instance_savings_usd",
+                "legendFormat": "Spot Savings"
+              },
+              {
+                "expr": "hyperconformal_ondemand_cost_usd",
+                "legendFormat": "On-Demand Cost"
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "title": "Cost Trend (30 days)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "hyperconformal_daily_cost_usd",
+                "legendFormat": "Daily Cost"
+              }
+            ],
+            "timeFrom": "30d"
+          },
+          {
+            "id": 6,
+            "title": "Resource Waste",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "hyperconformal_resource_waste_percent",
+                "legendFormat": "Waste %"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "percent",
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": 0},
+                    {"color": "yellow", "value": 3},
+                    {"color": "red", "value": 5}
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+
+---
+# Cost Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cost-secrets
+  namespace: hyperconformal-cost-optimization
+type: Opaque
+data:
+  slack-webhook: aHR0cHM6Ly9ob29rcy5zbGFjay5jb20veW91ci13ZWJob29r  # Base64 encoded Slack webhook
+
+---
+# ML Models PVC for Predictive Scaling
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ml-models-pvc
+  namespace: hyperconformal-cost-optimization
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3-encrypted
+  resources:
+    requests:
+      storage: 10Gi

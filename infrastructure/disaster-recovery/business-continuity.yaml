@@ -1,0 +1,909 @@
+# Disaster Recovery and Business Continuity Plan
+# Enterprise-grade DR with automated failover and recovery procedures
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hyperconformal-disaster-recovery
+  labels:
+    name: hyperconformal-disaster-recovery
+    purpose: business-continuity
+
+---
+# Disaster Recovery Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dr-config
+  namespace: hyperconformal-disaster-recovery
+data:
+  disaster-recovery.yaml: |
+    disaster_recovery:
+      rto: 300  # Recovery Time Objective: 5 minutes
+      rpo: 60   # Recovery Point Objective: 1 minute
+      
+      primary_region: "us-east-1"
+      secondary_regions:
+        - "eu-west-1"
+        - "ap-southeast-1"
+        - "sa-east-1"
+      
+      failover_strategy: "active-passive"
+      automated_failover: true
+      manual_override: true
+      
+      data_replication:
+        database:
+          type: "synchronous"
+          lag_threshold_seconds: 5
+        storage:
+          type: "asynchronous" 
+          sync_interval_minutes: 5
+        cache:
+          type: "asynchronous"
+          sync_interval_seconds: 30
+      
+      health_checks:
+        interval_seconds: 10
+        timeout_seconds: 5
+        failure_threshold: 3
+        success_threshold: 1
+        
+      escalation:
+        levels:
+          - name: "automatic"
+            timeout_minutes: 5
+            actions: ["regional_failover"]
+          - name: "engineering"
+            timeout_minutes: 15
+            contacts: ["sre-team@hyperconformal.ai"]
+          - name: "management"
+            timeout_minutes: 30
+            contacts: ["leadership@hyperconformal.ai"]
+      
+      testing:
+        schedule: "monthly"
+        types: ["failover", "failback", "data_recovery"]
+        validation_criteria:
+          - "service_availability > 99%"
+          - "data_integrity = 100%"
+          - "failover_time < 300s"
+
+---
+# DR Health Check Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dr-health-monitor
+  namespace: hyperconformal-disaster-recovery
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dr-health-monitor
+  template:
+    metadata:
+      labels:
+        app: dr-health-monitor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: dr-health-monitor-sa
+      containers:
+      - name: health-monitor
+        image: hyperconformal/dr-health-monitor:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8081
+          name: metrics
+        env:
+        - name: PRIMARY_REGION
+          value: "us-east-1"
+        - name: SECONDARY_REGIONS
+          value: "eu-west-1,ap-southeast-1,sa-east-1"
+        - name: CHECK_INTERVAL
+          value: "10s"
+        - name: FAILURE_THRESHOLD
+          value: "3"
+        - name: PROMETHEUS_URL
+          value: "http://prometheus.hyperconformal-monitoring.svc.cluster.local:9090"
+        - name: ALERT_WEBHOOK
+          valueFrom:
+            secretKeyRef:
+              name: dr-secrets
+              key: alert-webhook-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: dr-config
+          mountPath: /config
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: dr-config
+        configMap:
+          name: dr-config
+      - name: tmp
+        emptyDir: {}
+
+---
+# DR Health Monitor Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: dr-health-monitor
+  namespace: hyperconformal-disaster-recovery
+  labels:
+    app: dr-health-monitor
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8081"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  - port: 8081
+    targetPort: 8081
+    name: metrics
+  selector:
+    app: dr-health-monitor
+
+---
+# Automated Failover Controller
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: failover-controller
+  namespace: hyperconformal-disaster-recovery
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: failover-controller
+  template:
+    metadata:
+      labels:
+        app: failover-controller
+    spec:
+      serviceAccountName: failover-controller-sa
+      containers:
+      - name: controller
+        image: hyperconformal/failover-controller:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: KUBECONFIG_PRIMARY
+          value: "/etc/kubeconfig/primary/config"
+        - name: KUBECONFIG_SECONDARY
+          value: "/etc/kubeconfig/secondary/config"
+        - name: FAILOVER_TIMEOUT
+          value: "300s"
+        - name: DRY_RUN
+          value: "false"
+        - name: AUTO_FAILBACK
+          value: "true"
+        - name: AWS_REGION
+          value: "us-east-1"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: kubeconfig-primary
+          mountPath: /etc/kubeconfig/primary
+        - name: kubeconfig-secondary
+          mountPath: /etc/kubeconfig/secondary
+        - name: aws-credentials
+          mountPath: /etc/aws
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: kubeconfig-primary
+        secret:
+          secretName: kubeconfig-primary
+      - name: kubeconfig-secondary
+        secret:
+          secretName: kubeconfig-secondary
+      - name: aws-credentials
+        secret:
+          secretName: aws-credentials
+      - name: tmp
+        emptyDir: {}
+
+---
+# DR ServiceAccounts and RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dr-health-monitor-sa
+  namespace: hyperconformal-disaster-recovery
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/dr-health-monitor-role"
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: failover-controller-sa
+  namespace: hyperconformal-disaster-recovery
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/failover-controller-role"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: disaster-recovery-operator
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["postgresql.cnpg.io"]
+  resources: ["clusters"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: disaster-recovery-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: disaster-recovery-operator
+subjects:
+- kind: ServiceAccount
+  name: dr-health-monitor-sa
+  namespace: hyperconformal-disaster-recovery
+- kind: ServiceAccount
+  name: failover-controller-sa
+  namespace: hyperconformal-disaster-recovery
+
+---
+# Backup and Restore Jobs
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: database-backup
+  namespace: hyperconformal-disaster-recovery
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: backup-restore-sa
+          containers:
+          - name: backup
+            image: postgres:15-alpine
+            command: ["/bin/sh"]
+            args:
+            - -c
+            - |
+              echo "Starting database backup..."
+              
+              # Create backup with compression
+              pg_dump "$DATABASE_URL" | gzip > /tmp/backup-$(date +%Y%m%d_%H%M%S).sql.gz
+              
+              # Upload to S3 with encryption
+              aws s3 cp /tmp/backup-*.sql.gz \
+                s3://hyperconformal-backups/database/$(date +%Y/%m/%d)/ \
+                --server-side-encryption AES256
+              
+              # Verify backup integrity
+              aws s3api head-object \
+                --bucket hyperconformal-backups \
+                --key database/$(date +%Y/%m/%d)/backup-$(date +%Y%m%d_%H%M%S).sql.gz
+              
+              echo "Database backup completed successfully"
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: hyperconformal-db-secret
+                  key: connection-string
+            - name: AWS_DEFAULT_REGION
+              value: "us-east-1"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hyperconformal-db-secret
+                  key: password
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 999
+              capabilities:
+                drop:
+                - ALL
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: tmp
+            emptyDir:
+              sizeLimit: 5Gi
+          restartPolicy: OnFailure
+
+---
+# Model and Data Backup
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: model-backup
+  namespace: hyperconformal-disaster-recovery
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: backup-restore-sa
+          containers:
+          - name: model-backup
+            image: amazon/aws-cli:latest
+            command: ["/bin/sh"]
+            args:
+            - -c
+            - |
+              echo "Starting model backup..."
+              
+              # Sync models to backup bucket
+              aws s3 sync /models/ s3://hyperconformal-model-backups/$(date +%Y/%m/%d)/ \
+                --delete \
+                --server-side-encryption AES256
+              
+              # Create manifest file
+              aws s3 ls s3://hyperconformal-model-backups/$(date +%Y/%m/%d)/ --recursive > /tmp/manifest.txt
+              aws s3 cp /tmp/manifest.txt s3://hyperconformal-model-backups/manifests/manifest-$(date +%Y%m%d).txt
+              
+              # Verify backup consistency
+              python3 /scripts/verify_model_backup.py \
+                --backup-path s3://hyperconformal-model-backups/$(date +%Y/%m/%d)/ \
+                --manifest-file /tmp/manifest.txt
+              
+              echo "Model backup completed successfully"
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "200m"
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1001
+              capabilities:
+                drop:
+                - ALL
+            volumeMounts:
+            - name: model-storage
+              mountPath: /models
+            - name: backup-scripts
+              mountPath: /scripts
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: model-storage
+            persistentVolumeClaim:
+              claimName: hyperconformal-models-pvc
+          - name: backup-scripts
+            configMap:
+              name: backup-scripts
+              defaultMode: 0755
+          - name: tmp
+            emptyDir: {}
+          restartPolicy: OnFailure
+
+---
+# Backup Scripts ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-scripts
+  namespace: hyperconformal-disaster-recovery
+data:
+  verify_model_backup.py: |
+    #!/usr/bin/env python3
+    import argparse
+    import boto3
+    import hashlib
+    import sys
+    
+    def verify_backup(backup_path, manifest_file):
+        """Verify backup integrity and completeness"""
+        s3 = boto3.client('s3')
+        
+        # Parse S3 path
+        bucket = backup_path.replace('s3://', '').split('/')[0]
+        prefix = '/'.join(backup_path.replace('s3://', '').split('/')[1:])
+        
+        print(f"Verifying backup in {bucket}/{prefix}")
+        
+        # List objects in backup
+        response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        
+        if 'Contents' not in response:
+            print("ERROR: No objects found in backup")
+            sys.exit(1)
+        
+        backup_files = [obj['Key'] for obj in response['Contents']]
+        print(f"Found {len(backup_files)} files in backup")
+        
+        # Verify file checksums (simplified)
+        verified_count = 0
+        for file_key in backup_files:
+            try:
+                s3.head_object(Bucket=bucket, Key=file_key)
+                verified_count += 1
+            except Exception as e:
+                print(f"ERROR verifying {file_key}: {e}")
+        
+        print(f"Verified {verified_count}/{len(backup_files)} files")
+        
+        if verified_count == len(backup_files):
+            print("Backup verification PASSED")
+            return True
+        else:
+            print("Backup verification FAILED")
+            return False
+    
+    if __name__ == "__main__":
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--backup-path', required=True)
+        parser.add_argument('--manifest-file', required=True)
+        args = parser.parse_args()
+        
+        success = verify_backup(args.backup_path, args.manifest_file)
+        sys.exit(0 if success else 1)
+
+---
+# DR Testing Framework
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dr-testing
+  namespace: hyperconformal-disaster-recovery
+spec:
+  schedule: "0 3 1 * *"  # Monthly on 1st at 3 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: dr-testing-sa
+          containers:
+          - name: dr-test
+            image: hyperconformal/dr-testing:latest
+            command: ["/bin/sh"]
+            args:
+            - -c
+            - |
+              echo "Starting DR testing..."
+              
+              # Test 1: Database failover
+              echo "Testing database failover..."
+              python3 /tests/test_db_failover.py
+              
+              # Test 2: Application failover
+              echo "Testing application failover..."
+              python3 /tests/test_app_failover.py
+              
+              # Test 3: Data recovery
+              echo "Testing data recovery..."
+              python3 /tests/test_data_recovery.py
+              
+              # Test 4: End-to-end DR scenario
+              echo "Testing end-to-end DR scenario..."
+              python3 /tests/test_full_dr.py
+              
+              # Generate test report
+              python3 /tests/generate_report.py \
+                --output-file /tmp/dr-test-report-$(date +%Y%m%d).json
+              
+              # Upload test report
+              aws s3 cp /tmp/dr-test-report-*.json \
+                s3://hyperconformal-dr-reports/$(date +%Y/%m/)/
+              
+              echo "DR testing completed"
+            env:
+            - name: TEST_ENVIRONMENT
+              value: "staging"
+            - name: NOTIFICATION_WEBHOOK
+              valueFrom:
+                secretKeyRef:
+                  name: dr-secrets
+                  key: notification-webhook
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1001
+              capabilities:
+                drop:
+                - ALL
+            volumeMounts:
+            - name: dr-tests
+              mountPath: /tests
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: dr-tests
+            configMap:
+              name: dr-test-scripts
+              defaultMode: 0755
+          - name: tmp
+            emptyDir: {}
+          restartPolicy: OnFailure
+
+---
+# ServiceAccount for Backup/Restore
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-restore-sa
+  namespace: hyperconformal-disaster-recovery
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/backup-restore-role"
+
+---
+# ServiceAccount for DR Testing
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dr-testing-sa
+  namespace: hyperconformal-disaster-recovery
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/dr-testing-role"
+
+---
+# DR Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dr-secrets
+  namespace: hyperconformal-disaster-recovery
+type: Opaque
+data:
+  alert-webhook-url: aHR0cHM6Ly9ob29rcy5zbGFjay5jb20veW91ci13ZWJob29r  # Base64 encoded
+  notification-webhook: aHR0cHM6Ly9ob29rcy5zbGFjay5jb20veW91ci1ub3RpZmljYXRpb24=  # Base64 encoded
+
+---
+# Emergency Response Runbook
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: emergency-runbook
+  namespace: hyperconformal-disaster-recovery
+data:
+  runbook.md: |
+    # HyperConformal Emergency Response Runbook
+    
+    ## Disaster Scenarios and Responses
+    
+    ### 1. Primary Region Failure (RTO: 5 minutes)
+    
+    #### Automatic Response:
+    1. Health monitors detect failure after 3 consecutive checks (30 seconds)
+    2. Failover controller initiates automatic failover to EU region
+    3. DNS records updated to point to EU load balancer
+    4. Database promoted from read replica to primary
+    5. Application instances scaled up in EU region
+    
+    #### Manual Verification:
+    ```bash
+    # Check failover status
+    kubectl get pods -n hyperconformal-disaster-recovery
+    
+    # Verify EU region is serving traffic
+    curl -H "Host: api.hyperconformal.ai" https://eu-west-1.hyperconformal.ai/health
+    
+    # Check database status
+    kubectl get clusters -n hyperconformal-production
+    ```
+    
+    ### 2. Database Corruption (RTO: 15 minutes)
+    
+    #### Response Steps:
+    1. Stop application to prevent further corruption
+    2. Restore from latest backup (max 6 hours old)
+    3. Apply WAL logs for point-in-time recovery
+    4. Verify data integrity
+    5. Restart application
+    
+    #### Commands:
+    ```bash
+    # Scale down application
+    kubectl scale deployment hyperconformal-production --replicas=0
+    
+    # Restore database
+    kubectl apply -f restore-job.yaml
+    
+    # Verify restoration
+    kubectl logs job/database-restore
+    ```
+    
+    ### 3. Complete Data Center Outage (RTO: 10 minutes)
+    
+    #### Response Steps:
+    1. Activate secondary region (automated)
+    2. Verify all services are operational
+    3. Check data synchronization status
+    4. Update monitoring dashboards
+    5. Notify stakeholders
+    
+    ### 4. Security Incident (RTO: Immediate)
+    
+    #### Response Steps:
+    1. Isolate affected systems
+    2. Preserve evidence
+    3. Activate incident response team
+    4. Implement emergency patches
+    5. Monitor for lateral movement
+    
+    ## Emergency Contacts
+    
+    - **SRE Team**: sre-oncall@hyperconformal.ai
+    - **Security Team**: security-incident@hyperconformal.ai
+    - **Leadership**: leadership@hyperconformal.ai
+    - **Emergency Hotline**: +1-800-HYPER-911
+    
+    ## Communication Templates
+    
+    ### Initial Incident Notification
+    ```
+    Subject: [INCIDENT] HyperConformal Service Disruption
+    
+    We are experiencing an issue with HyperConformal services.
+    
+    Impact: [Describe impact]
+    Status: [Investigating/Mitigating/Resolved]
+    ETA: [Estimated resolution time]
+    
+    We will provide updates every 15 minutes.
+    ```
+    
+    ### Resolution Notification
+    ```
+    Subject: [RESOLVED] HyperConformal Service Restored
+    
+    The HyperConformal service disruption has been resolved.
+    
+    Root Cause: [Brief description]
+    Duration: [Total downtime]
+    Impact: [Who was affected]
+    
+    A detailed post-mortem will be published within 48 hours.
+    ```
+
+---
+# DR Test Scripts ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dr-test-scripts
+  namespace: hyperconformal-disaster-recovery
+data:
+  test_db_failover.py: |
+    #!/usr/bin/env python3
+    import time
+    import psycopg2
+    import subprocess
+    import sys
+    
+    def test_database_failover():
+        """Test database failover functionality"""
+        print("Testing database failover...")
+        
+        # Connect to primary database
+        try:
+            primary_conn = psycopg2.connect(
+                host="hyperconformal-db-primary-rw",
+                database="hyperconformal",
+                user="hyperconformal",
+                password="password"
+            )
+            print("✓ Connected to primary database")
+        except Exception as e:
+            print(f"✗ Failed to connect to primary: {e}")
+            return False
+        
+        # Insert test data
+        try:
+            cursor = primary_conn.cursor()
+            cursor.execute("INSERT INTO dr_test (timestamp, data) VALUES (NOW(), 'test-data')")
+            primary_conn.commit()
+            print("✓ Inserted test data")
+        except Exception as e:
+            print(f"✗ Failed to insert test data: {e}")
+            return False
+        
+        # Simulate failover (in test environment only)
+        if os.getenv('TEST_ENVIRONMENT') == 'staging':
+            print("Simulating database failover...")
+            subprocess.run([
+                "kubectl", "patch", "cluster", "hyperconformal-db-primary",
+                "--type", "merge",
+                "-p", '{"spec":{"instances":0}}'
+            ])
+            
+            time.sleep(30)  # Wait for failover
+            
+            # Try to connect to replica (now primary)
+            try:
+                replica_conn = psycopg2.connect(
+                    host="hyperconformal-db-replica-eu-rw",
+                    database="hyperconformal",
+                    user="hyperconformal",
+                    password="password"
+                )
+                print("✓ Connected to new primary (former replica)")
+                
+                # Verify data is present
+                cursor = replica_conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM dr_test WHERE data = 'test-data'")
+                count = cursor.fetchone()[0]
+                
+                if count > 0:
+                    print("✓ Data verified after failover")
+                    return True
+                else:
+                    print("✗ Data not found after failover")
+                    return False
+                    
+            except Exception as e:
+                print(f"✗ Failed to connect to new primary: {e}")
+                return False
+        else:
+            print("Skipping actual failover in production")
+            return True
+    
+    if __name__ == "__main__":
+        success = test_database_failover()
+        sys.exit(0 if success else 1)
+
+---
+# Business Continuity Status Dashboard
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bc-dashboard-config
+  namespace: hyperconformal-disaster-recovery
+data:
+  bc-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "HyperConformal Business Continuity Status",
+        "tags": ["business-continuity", "disaster-recovery"],
+        "refresh": "30s",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Regional Health Status",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "up{job=\"hyperconformal-app\"}",
+                "legendFormat": "{{region}}"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "mappings": [
+                  {"options": {"0": {"text": "DOWN", "color": "red"}}},
+                  {"options": {"1": {"text": "UP", "color": "green"}}}
+                ]
+              }
+            }
+          },
+          {
+            "id": 2,
+            "title": "Backup Status",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "time() - hyperconformal_last_backup_timestamp < 21600",
+                "legendFormat": "Last Backup < 6h"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Data Replication Lag",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "hyperconformal_replication_lag_seconds",
+                "legendFormat": "{{region}}"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "title": "RTO/RPO Compliance",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "hyperconformal_rto_seconds",
+                "legendFormat": "RTO"
+              },
+              {
+                "expr": "hyperconformal_rpo_seconds", 
+                "legendFormat": "RPO"
+              }
+            ]
+          }
+        ]
+      }
+    }

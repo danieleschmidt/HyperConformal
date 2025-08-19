@@ -1,0 +1,653 @@
+# Cross-Region Replication and Data Synchronization
+# Multi-region deployment with data consistency and failover
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hyperconformal-replication
+  labels:
+    name: hyperconformal-replication
+    replication: cross-region
+
+---
+# PostgreSQL Primary-Replica Configuration
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: hyperconformal-db-primary
+  namespace: hyperconformal-production
+spec:
+  instances: 3
+  primaryUpdateStrategy: unsupervised
+  
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      effective_cache_size: "1GB"
+      wal_level: "replica"
+      max_wal_senders: "10"
+      max_replication_slots: "10"
+      hot_standby: "on"
+      archive_mode: "on"
+      archive_command: "aws s3 cp %p s3://hyperconformal-wal-archive/%f"
+      
+  bootstrap:
+    initdb:
+      database: hyperconformal
+      owner: hyperconformal
+      secret:
+        name: hyperconformal-db-secret
+        
+  storage:
+    size: 100Gi
+    storageClass: gp3-encrypted
+    
+  monitoring:
+    enabled: true
+    customQueriesConfigMap:
+    - name: postgresql-monitoring
+      key: custom-queries.yaml
+      
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://hyperconformal-db-backups"
+      s3Credentials:
+        accessKeyId:
+          name: backup-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: backup-credentials
+          key: SECRET_ACCESS_KEY
+      wal:
+        retention: "7d"
+      data:
+        retention: "30d"
+
+---
+# PostgreSQL Replica Clusters in Other Regions
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: hyperconformal-db-replica-eu
+  namespace: hyperconformal-production
+  annotations:
+    hyperconformal.ai/region: "eu-west-1"
+spec:
+  instances: 2
+  
+  replica:
+    enabled: true
+    source: "hyperconformal-db-primary"
+    
+  externalClusters:
+  - name: hyperconformal-db-primary
+    connectionParameters:
+      host: hyperconformal-db-primary-rw.hyperconformal-production.svc.cluster.local
+      user: postgres
+      dbname: hyperconformal
+      sslmode: require
+    password:
+      name: hyperconformal-db-secret
+      key: password
+      
+  storage:
+    size: 100Gi
+    storageClass: gp3-encrypted
+
+---
+# Redis Cluster for Cross-Region Caching
+apiVersion: redis.redis.opstreelabs.in/v1beta1
+kind: RedisCluster
+metadata:
+  name: hyperconformal-redis-cluster
+  namespace: hyperconformal-production
+spec:
+  clusterSize: 6
+  clusterVersion: v7.0.12
+  
+  persistenceEnabled: true
+  
+  redisExporter:
+    enabled: true
+    image: quay.io/opstree/redis-exporter:latest
+    
+  redisConfig:
+    save: "900 1 300 10 60 10000"
+    maxmemory-policy: "allkeys-lru"
+    maxmemory: "1gb"
+    
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp3-encrypted
+        resources:
+          requests:
+            storage: 10Gi
+            
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+---
+# Redis Sentinel for High Availability
+apiVersion: redis.redis.opstreelabs.in/v1beta1
+kind: RedisSentinel
+metadata:
+  name: hyperconformal-redis-sentinel
+  namespace: hyperconformal-production
+spec:
+  clusterSize: 3
+  
+  redisConfig:
+    down-after-milliseconds: "5000"
+    failover-timeout: "10000"
+    parallel-syncs: "1"
+    
+  redisSentinelConfig:
+    sentinel announce-ip: "0.0.0.0"
+    sentinel announce-port: "26379"
+
+---
+# Data Synchronization Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-sync-service
+  namespace: hyperconformal-replication
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: data-sync-service
+  template:
+    metadata:
+      labels:
+        app: data-sync-service
+    spec:
+      serviceAccountName: data-sync-sa
+      containers:
+      - name: sync-controller
+        image: hyperconformal/data-sync:latest
+        env:
+        - name: PRIMARY_REGION
+          value: "us-east-1"
+        - name: REPLICA_REGIONS
+          value: "eu-west-1,ap-southeast-1,sa-east-1"
+        - name: SYNC_INTERVAL
+          value: "30s"
+        - name: CONFLICT_RESOLUTION
+          value: "last-write-wins"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hyperconformal-db-secret
+              key: connection-string
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: hyperconformal-redis-secret
+              key: connection-string
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8081
+          name: metrics
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+
+---
+# Data Sync Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-sync-sa
+  namespace: hyperconformal-replication
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/data-sync-role"
+
+---
+# Cross-Region Service Mesh Configuration
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: cross-region-gateway
+  namespace: hyperconformal-production
+spec:
+  selector:
+    istio: eastwestgateway
+  servers:
+  - port:
+      number: 15443
+      name: tls
+      protocol: TLS
+    tls:
+      mode: ISTIO_MUTUAL
+    hosts:
+    - "*.local"
+    - "*.hyperconformal-production.svc.cluster.local"
+
+---
+# Destination Rules for Cross-Region Traffic
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: hyperconformal-cross-region
+  namespace: hyperconformal-production
+spec:
+  host: "*.hyperconformal-production.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+  exportTo:
+  - "*"
+
+---
+# Virtual Service for Cross-Region Load Balancing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: hyperconformal-cross-region-lb
+  namespace: hyperconformal-production
+spec:
+  hosts:
+  - hyperconformal-production-service
+  http:
+  - match:
+    - headers:
+        region:
+          exact: "us-east-1"
+    route:
+    - destination:
+        host: hyperconformal-production-service
+        subset: us-east-1
+      weight: 100
+  - match:
+    - headers:
+        region:
+          exact: "eu-west-1"
+    route:
+    - destination:
+        host: hyperconformal-production-service
+        subset: eu-west-1
+      weight: 100
+  - route:  # Default routing
+    - destination:
+        host: hyperconformal-production-service
+        subset: us-east-1
+      weight: 50
+    - destination:
+        host: hyperconformal-production-service
+        subset: eu-west-1
+      weight: 25
+    - destination:
+        host: hyperconformal-production-service
+        subset: ap-southeast-1
+      weight: 15
+    - destination:
+        host: hyperconformal-production-service
+        subset: sa-east-1
+      weight: 10
+
+---
+# Model Synchronization ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-sync-config
+  namespace: hyperconformal-replication
+data:
+  sync-strategy.yaml: |
+    replication:
+      strategy: "active-passive"
+      primary_region: "us-east-1"
+      replica_regions:
+        - "eu-west-1"
+        - "ap-southeast-1" 
+        - "sa-east-1"
+      
+    model_sync:
+      enabled: true
+      interval: "5m"
+      storage:
+        type: "s3"
+        bucket: "hyperconformal-models-global"
+        encryption: true
+      
+    data_consistency:
+      level: "eventual"
+      conflict_resolution: "last-write-wins"
+      max_lag_seconds: 30
+      
+    failover:
+      automatic: true
+      health_check_interval: "10s"
+      failure_threshold: 3
+      recovery_threshold: 2
+
+---
+# Model Synchronization CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: model-sync-job
+  namespace: hyperconformal-replication
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: model-sync-sa
+          containers:
+          - name: model-sync
+            image: hyperconformal/model-sync:latest
+            command: ["/bin/sh"]
+            args:
+            - -c
+            - |
+              echo "Starting model synchronization..."
+              
+              # Check for model updates in primary region
+              aws s3 sync s3://hyperconformal-models-us-east-1/ /tmp/models-primary/
+              
+              # Sync to replica regions
+              for region in eu-west-1 ap-southeast-1 sa-east-1; do
+                echo "Syncing models to $region..."
+                aws s3 sync /tmp/models-primary/ s3://hyperconformal-models-$region/
+              done
+              
+              # Update model version metadata
+              kubectl patch configmap hyperconformal-config \
+                --type merge \
+                -p '{"data":{"model_version":"'$(date +%s)'"}}'
+              
+              echo "Model synchronization completed"
+            env:
+            - name: AWS_DEFAULT_REGION
+              value: "us-east-1"
+            - name: SYNC_TIMEOUT
+              value: "300"
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "200m"
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1001
+              capabilities:
+                drop:
+                - ALL
+            volumeMounts:
+            - name: tmp-storage
+              mountPath: /tmp
+          volumes:
+          - name: tmp-storage
+            emptyDir:
+              sizeLimit: 1Gi
+          restartPolicy: OnFailure
+
+---
+# Model Sync ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: model-sync-sa
+  namespace: hyperconformal-replication
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/model-sync-role"
+
+---
+# Cross-Region Monitoring
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cross-region-monitoring
+  namespace: hyperconformal-monitoring
+data:
+  region-health-check.yaml: |
+    groups:
+    - name: cross-region.health
+      rules:
+      - alert: RegionUnavailable
+        expr: up{job="hyperconformal-app", region!="us-east-1"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          region: "{{ $labels.region }}"
+        annotations:
+          summary: "Region {{ $labels.region }} is unavailable"
+          description: "No healthy instances in region {{ $labels.region }}"
+      
+      - alert: CrossRegionLatencyHigh
+        expr: histogram_quantile(0.95, rate(hyperconformal_cross_region_request_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cross-region latency is high"
+          description: "95th percentile cross-region latency is {{ $value }}s"
+      
+      - alert: DataSyncLagHigh
+        expr: hyperconformal_data_sync_lag_seconds > 60
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Data synchronization lag is high"
+          description: "Data sync lag is {{ $value }}s, above 60s threshold"
+      
+      - alert: ModelSyncFailure
+        expr: increase(hyperconformal_model_sync_failures_total[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model synchronization failed"
+          description: "{{ $value }} model sync failures in the last hour"
+
+---
+# Circuit Breaker for Cross-Region Calls
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: hyperconformal-circuit-breaker
+  namespace: hyperconformal-production
+spec:
+  host: hyperconformal-production-service
+  trafficPolicy:
+    outlierDetection:
+      consecutiveGatewayErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 30
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+        consecutiveGatewayErrors: 3
+        interval: 30s
+        baseEjectionTime: 30s
+
+---
+# Failover Automation
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: cross-region-failover
+  namespace: hyperconformal-replication
+spec:
+  entrypoint: failover-sequence
+  templates:
+  - name: failover-sequence
+    steps:
+    - - name: detect-failure
+        template: check-primary-health
+    - - name: promote-replica
+        template: promote-replica-to-primary
+        when: "{{steps.detect-failure.outputs.result}} == 'unhealthy'"
+    - - name: update-dns
+        template: update-dns-records
+        when: "{{steps.promote-replica.outputs.result}} == 'success'"
+    - - name: notify-teams
+        template: send-notifications
+  
+  - name: check-primary-health
+    script:
+      image: curlimages/curl:latest
+      command: [sh]
+      source: |
+        if curl -f http://hyperconformal-production-service/health; then
+          echo "healthy"
+        else
+          echo "unhealthy"
+        fi
+  
+  - name: promote-replica-to-primary
+    script:
+      image: bitnami/kubectl:latest
+      command: [sh]
+      source: |
+        # Promote EU region replica to primary
+        kubectl patch cluster hyperconformal-db-replica-eu \
+          --type merge \
+          -p '{"spec":{"replica":{"enabled":false}}}'
+        
+        # Update service to point to new primary
+        kubectl patch service hyperconformal-production-service \
+          --type merge \
+          -p '{"spec":{"selector":{"region":"eu-west-1"}}}'
+        
+        echo "success"
+  
+  - name: update-dns-records
+    script:
+      image: amazon/aws-cli:latest
+      command: [sh]
+      source: |
+        # Update Route 53 to point to EU region
+        aws route53 change-resource-record-sets \
+          --hosted-zone-id Z123456789 \
+          --change-batch file:///tmp/failover-dns.json
+  
+  - name: send-notifications
+    script:
+      image: curlimages/curl:latest
+      command: [sh]
+      source: |
+        curl -X POST https://hooks.slack.com/YOUR-WEBHOOK \
+          -H 'Content-Type: application/json' \
+          -d '{"text":"🚨 HyperConformal failover completed to EU region"}'
+
+---
+# Data Integrity Checker
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: data-integrity-check
+  namespace: hyperconformal-replication
+spec:
+  schedule: "0 */4 * * *"  # Every 4 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: data-integrity-sa
+          containers:
+          - name: integrity-checker
+            image: hyperconformal/data-integrity:latest
+            command: ["/bin/sh"]
+            args:
+            - -c
+            - |
+              echo "Starting data integrity check..."
+              
+              # Check database consistency across regions
+              python3 /app/check_db_consistency.py
+              
+              # Verify model file checksums
+              python3 /app/verify_model_integrity.py
+              
+              # Check Redis cache consistency
+              python3 /app/check_cache_consistency.py
+              
+              echo "Data integrity check completed"
+            env:
+            - name: PRIMARY_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: hyperconformal-db-secret
+                  key: primary-connection-string
+            - name: REPLICA_DB_URLS
+              valueFrom:
+                secretKeyRef:
+                  name: hyperconformal-db-secret
+                  key: replica-connection-strings
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "200m"
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1001
+              capabilities:
+                drop:
+                - ALL
+          restartPolicy: OnFailure
+
+---
+# ServiceAccount for Data Integrity
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-integrity-sa
+  namespace: hyperconformal-replication
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/data-integrity-role"
