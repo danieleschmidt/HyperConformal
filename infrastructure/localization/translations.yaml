@@ -1,0 +1,438 @@
+# Comprehensive Internationalization for HyperConformal
+# 6 languages with cultural adaptation and compliance messaging
+
+languages:
+  en:
+    name: "English"
+    locale: "en-US"
+    direction: "ltr"
+    currency: "USD"
+    date_format: "MM/DD/YYYY"
+    number_format: "1,234.56"
+    
+  es:
+    name: "Español"
+    locale: "es-ES"
+    direction: "ltr"
+    currency: "EUR"
+    date_format: "DD/MM/YYYY"
+    number_format: "1.234,56"
+    
+  fr:
+    name: "Français"
+    locale: "fr-FR"
+    direction: "ltr"
+    currency: "EUR"
+    date_format: "DD/MM/YYYY"
+    number_format: "1 234,56"
+    
+  de:
+    name: "Deutsch"
+    locale: "de-DE"
+    direction: "ltr"
+    currency: "EUR"
+    date_format: "DD.MM.YYYY"
+    number_format: "1.234,56"
+    
+  ja:
+    name: "日本語"
+    locale: "ja-JP"
+    direction: "ltr"
+    currency: "JPY"
+    date_format: "YYYY/MM/DD"
+    number_format: "1,234"
+    
+  zh:
+    name: "中文"
+    locale: "zh-CN"
+    direction: "ltr"
+    currency: "CNY"
+    date_format: "YYYY-MM-DD"
+    number_format: "1,234.56"
+
+# Core application messages
+messages:
+  en:
+    # System status
+    system_ready: "HyperConformal system ready"
+    system_initializing: "Initializing quantum HDC algorithms..."
+    system_error: "System error occurred"
+    system_maintenance: "System under maintenance"
+    
+    # Model operations
+    model_training: "Training HDC model with {samples} samples..."
+    model_trained: "Model training completed successfully"
+    model_loading: "Loading pre-trained model..."
+    model_ready: "Model ready for inference"
+    model_error: "Model operation failed"
+    
+    # Predictions
+    prediction_started: "Starting prediction with conformal guarantees..."
+    prediction_complete: "Prediction completed in {time}ms"
+    prediction_error: "Prediction failed: {error}"
+    coverage_guarantee: "Coverage guarantee: {coverage}%"
+    confidence_interval: "Confidence interval: [{lower}, {upper}]"
+    
+    # Calibration
+    calibration_started: "Starting conformal calibration..."
+    calibration_complete: "Conformal calibration completed"
+    calibration_error: "Calibration failed: {error}"
+    
+    # Data validation
+    invalid_input: "Invalid input data provided"
+    missing_features: "Missing required features: {features}"
+    data_validation_passed: "Data validation passed"
+    data_preprocessing: "Preprocessing input data..."
+    
+    # Performance metrics
+    throughput_achieved: "Achieved {rps} predictions/second"
+    latency_measured: "Response time: {latency}ms"
+    memory_usage: "Memory usage: {memory}MB"
+    cpu_usage: "CPU usage: {cpu}%"
+    
+    # Error messages
+    error_network: "Network connectivity error"
+    error_timeout: "Operation timed out"
+    error_memory: "Insufficient memory"
+    error_invalid_config: "Invalid configuration"
+    error_permission_denied: "Permission denied"
+    
+    # Compliance messages
+    gdpr_notice: "This service complies with GDPR regulations"
+    data_processing_consent: "Your data will be processed according to our privacy policy"
+    data_retention_notice: "Data will be retained for {days} days as per GDPR requirements"
+    right_to_erasure: "You have the right to request data deletion"
+    data_portability: "You can request a copy of your data"
+    
+  es:
+    # System status
+    system_ready: "Sistema HyperConformal listo"
+    system_initializing: "Inicializando algoritmos HDC cuánticos..."
+    system_error: "Error del sistema ocurrido"
+    system_maintenance: "Sistema en mantenimiento"
+    
+    # Model operations
+    model_training: "Entrenando modelo HDC con {samples} muestras..."
+    model_trained: "Entrenamiento del modelo completado exitosamente"
+    model_loading: "Cargando modelo pre-entrenado..."
+    model_ready: "Modelo listo para inferencia"
+    model_error: "Operación del modelo falló"
+    
+    # Predictions
+    prediction_started: "Iniciando predicción con garantías conformes..."
+    prediction_complete: "Predicción completada en {time}ms"
+    prediction_error: "Predicción falló: {error}"
+    coverage_guarantee: "Garantía de cobertura: {coverage}%"
+    confidence_interval: "Intervalo de confianza: [{lower}, {upper}]"
+    
+    # Calibration
+    calibration_started: "Iniciando calibración conforme..."
+    calibration_complete: "Calibración conforme completada"
+    calibration_error: "Calibración falló: {error}"
+    
+    # Data validation
+    invalid_input: "Datos de entrada inválidos proporcionados"
+    missing_features: "Características requeridas faltantes: {features}"
+    data_validation_passed: "Validación de datos aprobada"
+    data_preprocessing: "Preprocesando datos de entrada..."
+    
+    # Performance metrics
+    throughput_achieved: "Logrado {rps} predicciones/segundo"
+    latency_measured: "Tiempo de respuesta: {latency}ms"
+    memory_usage: "Uso de memoria: {memory}MB"
+    cpu_usage: "Uso de CPU: {cpu}%"
+    
+    # Error messages
+    error_network: "Error de conectividad de red"
+    error_timeout: "Operación agotó tiempo límite"
+    error_memory: "Memoria insuficiente"
+    error_invalid_config: "Configuración inválida"
+    error_permission_denied: "Permiso denegado"
+    
+    # Compliance messages
+    gdpr_notice: "Este servicio cumple con las regulaciones GDPR"
+    data_processing_consent: "Sus datos serán procesados según nuestra política de privacidad"
+    data_retention_notice: "Los datos se retendrán por {days} días según los requisitos GDPR"
+    right_to_erasure: "Tiene derecho a solicitar la eliminación de datos"
+    data_portability: "Puede solicitar una copia de sus datos"
+    
+  fr:
+    # System status
+    system_ready: "Système HyperConformal prêt"
+    system_initializing: "Initialisation des algorithmes HDC quantiques..."
+    system_error: "Erreur système survenue"
+    system_maintenance: "Système en maintenance"
+    
+    # Model operations
+    model_training: "Entraînement du modèle HDC avec {samples} échantillons..."
+    model_trained: "Entraînement du modèle terminé avec succès"
+    model_loading: "Chargement du modèle pré-entraîné..."
+    model_ready: "Modèle prêt pour l'inférence"
+    model_error: "Opération du modèle échouée"
+    
+    # Predictions
+    prediction_started: "Début de prédiction avec garanties conformes..."
+    prediction_complete: "Prédiction terminée en {time}ms"
+    prediction_error: "Prédiction échouée : {error}"
+    coverage_guarantee: "Garantie de couverture : {coverage}%"
+    confidence_interval: "Intervalle de confiance : [{lower}, {upper}]"
+    
+    # Calibration
+    calibration_started: "Début de calibration conforme..."
+    calibration_complete: "Calibration conforme terminée"
+    calibration_error: "Calibration échouée : {error}"
+    
+    # Data validation
+    invalid_input: "Données d'entrée invalides fournies"
+    missing_features: "Caractéristiques requises manquantes : {features}"
+    data_validation_passed: "Validation des données réussie"
+    data_preprocessing: "Prétraitement des données d'entrée..."
+    
+    # Performance metrics
+    throughput_achieved: "Atteint {rps} prédictions/seconde"
+    latency_measured: "Temps de réponse : {latency}ms"
+    memory_usage: "Utilisation mémoire : {memory}MB"
+    cpu_usage: "Utilisation CPU : {cpu}%"
+    
+    # Error messages
+    error_network: "Erreur de connectivité réseau"
+    error_timeout: "Opération expirée"
+    error_memory: "Mémoire insuffisante"
+    error_invalid_config: "Configuration invalide"
+    error_permission_denied: "Permission refusée"
+    
+    # Compliance messages
+    gdpr_notice: "Ce service respecte les réglementations GDPR"
+    data_processing_consent: "Vos données seront traitées selon notre politique de confidentialité"
+    data_retention_notice: "Les données seront conservées pendant {days} jours selon les exigences GDPR"
+    right_to_erasure: "Vous avez le droit de demander la suppression des données"
+    data_portability: "Vous pouvez demander une copie de vos données"
+    
+  de:
+    # System status
+    system_ready: "HyperConformal System bereit"
+    system_initializing: "Quantum-HDC-Algorithmen werden initialisiert..."
+    system_error: "Systemfehler aufgetreten"
+    system_maintenance: "System wird gewartet"
+    
+    # Model operations
+    model_training: "HDC-Modell wird mit {samples} Stichproben trainiert..."
+    model_trained: "Modelltraining erfolgreich abgeschlossen"
+    model_loading: "Vortrainiertes Modell wird geladen..."
+    model_ready: "Modell bereit für Inferenz"
+    model_error: "Modell-Operation fehlgeschlagen"
+    
+    # Predictions
+    prediction_started: "Vorhersage mit konformen Garantien wird gestartet..."
+    prediction_complete: "Vorhersage in {time}ms abgeschlossen"
+    prediction_error: "Vorhersage fehlgeschlagen: {error}"
+    coverage_guarantee: "Abdeckungsgarantie: {coverage}%"
+    confidence_interval: "Konfidenzintervall: [{lower}, {upper}]"
+    
+    # Calibration
+    calibration_started: "Konforme Kalibrierung wird gestartet..."
+    calibration_complete: "Konforme Kalibrierung abgeschlossen"
+    calibration_error: "Kalibrierung fehlgeschlagen: {error}"
+    
+    # Data validation
+    invalid_input: "Ungültige Eingabedaten bereitgestellt"
+    missing_features: "Fehlende erforderliche Merkmale: {features}"
+    data_validation_passed: "Datenvalidierung bestanden"
+    data_preprocessing: "Eingabedaten werden vorverarbeitet..."
+    
+    # Performance metrics
+    throughput_achieved: "{rps} Vorhersagen/Sekunde erreicht"
+    latency_measured: "Antwortzeit: {latency}ms"
+    memory_usage: "Speicherverbrauch: {memory}MB"
+    cpu_usage: "CPU-Auslastung: {cpu}%"
+    
+    # Error messages
+    error_network: "Netzwerkverbindungsfehler"
+    error_timeout: "Operation zeitlich abgelaufen"
+    error_memory: "Unzureichender Speicher"
+    error_invalid_config: "Ungültige Konfiguration"
+    error_permission_denied: "Berechtigung verweigert"
+    
+    # Compliance messages
+    gdpr_notice: "Dieser Service entspricht den GDPR-Vorschriften"
+    data_processing_consent: "Ihre Daten werden gemäß unserer Datenschutzrichtlinie verarbeitet"
+    data_retention_notice: "Daten werden {days} Tage gemäß GDPR-Anforderungen aufbewahrt"
+    right_to_erasure: "Sie haben das Recht, die Löschung von Daten zu beantragen"
+    data_portability: "Sie können eine Kopie Ihrer Daten anfordern"
+    
+  ja:
+    # System status
+    system_ready: "HyperConformalシステム準備完了"
+    system_initializing: "量子HDCアルゴリズムを初期化中..."
+    system_error: "システムエラーが発生しました"
+    system_maintenance: "システムメンテナンス中"
+    
+    # Model operations
+    model_training: "{samples}サンプルでHDCモデルを訓練中..."
+    model_trained: "モデル訓練が正常に完了しました"
+    model_loading: "事前訓練済みモデルを読み込み中..."
+    model_ready: "推論用モデル準備完了"
+    model_error: "モデル操作が失敗しました"
+    
+    # Predictions
+    prediction_started: "適合的保証付き予測を開始中..."
+    prediction_complete: "予測が{time}msで完了しました"
+    prediction_error: "予測が失敗しました: {error}"
+    coverage_guarantee: "カバレッジ保証: {coverage}%"
+    confidence_interval: "信頼区間: [{lower}, {upper}]"
+    
+    # Calibration
+    calibration_started: "適合的較正を開始中..."
+    calibration_complete: "適合的較正が完了しました"
+    calibration_error: "較正が失敗しました: {error}"
+    
+    # Data validation
+    invalid_input: "無効な入力データが提供されました"
+    missing_features: "必要な特徴量が不足: {features}"
+    data_validation_passed: "データ検証に合格しました"
+    data_preprocessing: "入力データを前処理中..."
+    
+    # Performance metrics
+    throughput_achieved: "{rps}予測/秒を達成"
+    latency_measured: "応答時間: {latency}ms"
+    memory_usage: "メモリ使用量: {memory}MB"
+    cpu_usage: "CPU使用率: {cpu}%"
+    
+    # Error messages
+    error_network: "ネットワーク接続エラー"
+    error_timeout: "操作がタイムアウトしました"
+    error_memory: "メモリ不足"
+    error_invalid_config: "無効な設定"
+    error_permission_denied: "アクセス拒否"
+    
+    # Compliance messages
+    gdpr_notice: "このサービスはGDPR規制に準拠しています"
+    data_processing_consent: "お客様のデータはプライバシーポリシーに従って処理されます"
+    data_retention_notice: "データはGDPR要件に従い{days}日間保持されます"
+    right_to_erasure: "データ削除を要求する権利があります"
+    data_portability: "データのコピーを要求できます"
+    
+  zh:
+    # System status
+    system_ready: "HyperConformal系统就绪"
+    system_initializing: "正在初始化量子HDC算法..."
+    system_error: "系统发生错误"
+    system_maintenance: "系统维护中"
+    
+    # Model operations
+    model_training: "正在用{samples}个样本训练HDC模型..."
+    model_trained: "模型训练成功完成"
+    model_loading: "正在加载预训练模型..."
+    model_ready: "模型推理就绪"
+    model_error: "模型操作失败"
+    
+    # Predictions
+    prediction_started: "开始保形保证预测..."
+    prediction_complete: "预测在{time}毫秒内完成"
+    prediction_error: "预测失败: {error}"
+    coverage_guarantee: "覆盖保证: {coverage}%"
+    confidence_interval: "置信区间: [{lower}, {upper}]"
+    
+    # Calibration
+    calibration_started: "开始保形校准..."
+    calibration_complete: "保形校准完成"
+    calibration_error: "校准失败: {error}"
+    
+    # Data validation
+    invalid_input: "提供了无效的输入数据"
+    missing_features: "缺少必需特征: {features}"
+    data_validation_passed: "数据验证通过"
+    data_preprocessing: "正在预处理输入数据..."
+    
+    # Performance metrics
+    throughput_achieved: "达到{rps}预测/秒"
+    latency_measured: "响应时间: {latency}ms"
+    memory_usage: "内存使用: {memory}MB"
+    cpu_usage: "CPU使用率: {cpu}%"
+    
+    # Error messages
+    error_network: "网络连接错误"
+    error_timeout: "操作超时"
+    error_memory: "内存不足"
+    error_invalid_config: "配置无效"
+    error_permission_denied: "权限被拒绝"
+    
+    # Compliance messages
+    gdpr_notice: "此服务符合GDPR法规"
+    data_processing_consent: "您的数据将根据我们的隐私政策进行处理"
+    data_retention_notice: "根据GDPR要求，数据将保留{days}天"
+    right_to_erasure: "您有权要求删除数据"
+    data_portability: "您可以请求获取数据副本"
+
+# Cultural adaptations
+cultural_settings:
+  en:
+    business_hours: "9:00 AM - 5:00 PM EST"
+    support_phone: "+1-800-HYPER-AI"
+    privacy_policy_url: "https://hyperconformal.ai/privacy"
+    terms_url: "https://hyperconformal.ai/terms"
+    
+  es:
+    business_hours: "9:00 - 17:00 CET"
+    support_phone: "+34-900-HYPER-AI"
+    privacy_policy_url: "https://hyperconformal.ai/es/privacidad"
+    terms_url: "https://hyperconformal.ai/es/terminos"
+    
+  fr:
+    business_hours: "9h00 - 17h00 CET"
+    support_phone: "+33-800-HYPER-AI"
+    privacy_policy_url: "https://hyperconformal.ai/fr/confidentialite"
+    terms_url: "https://hyperconformal.ai/fr/conditions"
+    
+  de:
+    business_hours: "09:00 - 17:00 CET"
+    support_phone: "+49-800-HYPER-AI"
+    privacy_policy_url: "https://hyperconformal.ai/de/datenschutz"
+    terms_url: "https://hyperconformal.ai/de/bedingungen"
+    
+  ja:
+    business_hours: "午前9時 - 午後5時 JST"
+    support_phone: "+81-3-HYPER-AI"
+    privacy_policy_url: "https://hyperconformal.ai/ja/privacy"
+    terms_url: "https://hyperconformal.ai/ja/terms"
+    
+  zh:
+    business_hours: "上午9点 - 下午5点 CST"
+    support_phone: "+86-400-HYPER-AI"
+    privacy_policy_url: "https://hyperconformal.ai/zh/privacy"
+    terms_url: "https://hyperconformal.ai/zh/terms"
+
+# Compliance-specific messages by jurisdiction
+compliance_messages:
+  gdpr:
+    en:
+      cookie_notice: "We use cookies to improve your experience. By using our service, you consent to our use of cookies."
+      data_controller: "Terragon Labs is the data controller for your personal information."
+      legal_basis: "We process your data based on your consent and legitimate interests."
+      retention_period: "Your data will be retained for the minimum period necessary."
+      
+    de:
+      cookie_notice: "Wir verwenden Cookies, um Ihre Erfahrung zu verbessern. Durch die Nutzung unseres Dienstes stimmen Sie der Verwendung von Cookies zu."
+      data_controller: "Terragon Labs ist der Datenverantwortliche für Ihre persönlichen Informationen."
+      legal_basis: "Wir verarbeiten Ihre Daten auf Basis Ihrer Einwilligung und berechtigter Interessen."
+      retention_period: "Ihre Daten werden für den minimal notwendigen Zeitraum gespeichert."
+      
+    fr:
+      cookie_notice: "Nous utilisons des cookies pour améliorer votre expérience. En utilisant notre service, vous consentez à notre utilisation des cookies."
+      data_controller: "Terragon Labs est le responsable du traitement de vos informations personnelles."
+      legal_basis: "Nous traitons vos données sur la base de votre consentement et d'intérêts légitimes."
+      retention_period: "Vos données seront conservées pour la période minimale nécessaire."
+      
+  ccpa:
+    en:
+      opt_out_notice: "California residents have the right to opt out of the sale of personal information."
+      data_categories: "We collect personal identifiers, commercial information, and usage data."
+      third_party_sharing: "We may share data with service providers and business partners."
+      consumer_rights: "You have rights to know, delete, and opt-out regarding your personal information."
+      
+  pdpa:
+    en:
+      consent_notice: "We require your consent to collect and process your personal data."
+      purpose_limitation: "Your data will only be used for the stated purposes."
+      data_protection_officer: "Contact our Data Protection Officer for privacy concerns."
+      withdrawal_rights: "You may withdraw your consent at any time."

@@ -1,0 +1,742 @@
+# Production-Grade Kubernetes Deployment for HyperConformal
+# Auto-scaling, monitoring, and performance optimization
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hyperconformal-production
+  labels:
+    name: hyperconformal-production
+    environment: production
+    compliance: "gdpr,ccpa,pdpa,soc2"
+  annotations:
+    hyperconformal.ai/region: "multi-region"
+    hyperconformal.ai/performance-target: "347000rps"
+
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hyperconformal-config
+  namespace: hyperconformal-production
+data:
+  # Performance settings
+  workers: "8"
+  batch_size: "1000"
+  max_queue_size: "10000"
+  cache_size: "1GB"
+  
+  # Global settings
+  default_language: "en"
+  supported_languages: "en,es,fr,de,ja,zh"
+  
+  # Compliance settings
+  data_retention_days: "365"
+  audit_logging: "true"
+  encryption_required: "true"
+  
+  # Monitoring settings
+  metrics_enabled: "true"
+  tracing_enabled: "true"
+  log_level: "INFO"
+  
+  # Performance targets
+  target_rps: "347000"
+  max_latency_ms: "100"
+  target_availability: "99.99"
+
+---
+# Secret for sensitive configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hyperconformal-secrets
+  namespace: hyperconformal-production
+type: Opaque
+data:
+  # These would be base64 encoded in practice
+  encryption_key: "your-encryption-key-here"
+  database_url: "postgresql://user:pass@host:port/db"
+  redis_url: "redis://user:pass@host:port"
+  monitoring_token: "your-monitoring-token"
+
+---
+# ServiceAccount with RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hyperconformal-sa
+  namespace: hyperconformal-production
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT-ID:role/hyperconformal-pod-role"
+
+---
+# ClusterRole for service operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hyperconformal-cluster-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hyperconformal-cluster-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hyperconformal-cluster-role
+subjects:
+- kind: ServiceAccount
+  name: hyperconformal-sa
+  namespace: hyperconformal-production
+
+---
+# PersistentVolumeClaim for model storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hyperconformal-models-pvc
+  namespace: hyperconformal-production
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 100Gi
+
+---
+# Production Deployment with auto-scaling capabilities
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hyperconformal-production
+  namespace: hyperconformal-production
+  labels:
+    app: hyperconformal
+    component: api
+    version: production
+    performance-tier: high
+spec:
+  replicas: 10  # Initial replicas for high availability
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 50%
+      maxUnavailable: 25%
+  selector:
+    matchLabels:
+      app: hyperconformal
+      component: api
+  template:
+    metadata:
+      labels:
+        app: hyperconformal
+        component: api
+        version: production
+        performance-tier: high
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
+        hyperconformal.ai/performance-target: "347000rps"
+        hyperconformal.ai/compliance: "gdpr,ccpa,pdpa,soc2"
+    spec:
+      serviceAccountName: hyperconformal-sa
+      
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      
+      # Init container for system preparation
+      initContainers:
+      - name: system-init
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Initializing HyperConformal production environment..."
+          echo "Checking model storage..."
+          ls -la /app/models || true
+          echo "System initialization complete"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+      
+      containers:
+      - name: hyperconformal-api
+        image: hyperconformal:production-latest
+        imagePullPolicy: Always
+        
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 8081
+          protocol: TCP
+        - name: health
+          containerPort: 8082
+          protocol: TCP
+        
+        env:
+        # Application configuration
+        - name: HYPERCONFORMAL_MODE
+          value: "production"
+        - name: HYPERCONFORMAL_WORKERS
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: workers
+        - name: HYPERCONFORMAL_BATCH_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: batch_size
+        - name: HYPERCONFORMAL_CACHE_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: cache_size
+        
+        # Performance settings
+        - name: TARGET_RPS
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: target_rps
+        - name: MAX_LATENCY_MS
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: max_latency_ms
+        
+        # Globalization settings
+        - name: DEFAULT_LANGUAGE
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: default_language
+        - name: SUPPORTED_LANGUAGES
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: supported_languages
+        
+        # Compliance settings
+        - name: DATA_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: data_retention_days
+        - name: AUDIT_LOGGING
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: audit_logging
+        - name: ENCRYPTION_REQUIRED
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: encryption_required
+        
+        # Monitoring settings
+        - name: METRICS_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: metrics_enabled
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: hyperconformal-config
+              key: log_level
+        
+        # Secret configuration
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperconformal-secrets
+              key: encryption_key
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hyperconformal-secrets
+              key: database_url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: hyperconformal-secrets
+              key: redis_url
+        
+        # Pod metadata
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        
+        # Resource allocation for high performance
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2000m"
+            ephemeral-storage: "10Gi"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+            ephemeral-storage: "20Gi"
+        
+        # Health checks optimized for performance
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: health
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: health
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        
+        # Startup probe for complex initialization
+        startupProbe:
+          httpGet:
+            path: /health/startup
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 30
+        
+        # Volume mounts
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+          readOnly: false
+        - name: cache-storage
+          mountPath: /app/cache
+          readOnly: false
+        - name: log-storage
+          mountPath: /app/logs
+          readOnly: false
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+        - name: tmp-volume
+          mountPath: /tmp
+          readOnly: false
+        
+        # Security context
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+      
+      # Sidecar container for monitoring and observability
+      - name: monitoring-sidecar
+        image: prom/node-exporter:v1.6.1
+        ports:
+        - name: node-metrics
+          containerPort: 9100
+          protocol: TCP
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+      
+      # Volume definitions
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: hyperconformal-models-pvc
+      - name: cache-storage
+        emptyDir:
+          sizeLimit: 2Gi
+      - name: log-storage
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: config-volume
+        configMap:
+          name: hyperconformal-config
+      - name: tmp-volume
+        emptyDir:
+          sizeLimit: 1Gi
+      
+      # Node selection for performance
+      nodeSelector:
+        kubernetes.io/arch: amd64
+        node-type: compute-optimized
+        instance-type: c6i.2xlarge
+      
+      # Tolerations for dedicated nodes
+      tolerations:
+      - key: "hyperconformal.ai/dedicated"
+        operator: "Equal"
+        value: "production"
+        effect: "NoSchedule"
+      - key: "node.kubernetes.io/memory-pressure"
+        operator: "Exists"
+        effect: "NoSchedule"
+      
+      # Pod anti-affinity for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - hyperconformal
+              topologyKey: kubernetes.io/hostname
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - hyperconformal
+              topologyKey: topology.kubernetes.io/zone
+        
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values:
+                - c6i.2xlarge
+                - c6i.4xlarge
+                - m6i.2xlarge
+                - m6i.4xlarge
+      
+      # DNS configuration for performance
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "2"
+        - name: edns0
+
+---
+# Production Service with session affinity
+apiVersion: v1
+kind: Service
+metadata:
+  name: hyperconformal-production-service
+  namespace: hyperconformal-production
+  labels:
+    app: hyperconformal
+    component: api
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "60"
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8081"
+spec:
+  type: LoadBalancer
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 300
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 8081
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: hyperconformal
+    component: api
+
+---
+# Internal ClusterIP service for inter-service communication
+apiVersion: v1
+kind: Service
+metadata:
+  name: hyperconformal-internal
+  namespace: hyperconformal-production
+  labels:
+    app: hyperconformal
+    component: internal
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 8081
+    targetPort: metrics
+    protocol: TCP
+  - name: health
+    port: 8082
+    targetPort: health
+    protocol: TCP
+  selector:
+    app: hyperconformal
+    component: api
+
+---
+# Horizontal Pod Autoscaler for performance scaling
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hyperconformal-hpa
+  namespace: hyperconformal-production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hyperconformal-production
+  minReplicas: 10
+  maxReplicas: 1000  # Enterprise scale
+  metrics:
+  # CPU utilization
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  
+  # Memory utilization
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  
+  # Custom metrics for RPS
+  - type: Pods
+    pods:
+      metric:
+        name: hyperconformal_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "1000"  # Scale up if > 1000 RPS per pod
+  
+  # Custom metrics for latency
+  - type: Pods
+    pods:
+      metric:
+        name: hyperconformal_response_time_ms
+      target:
+        type: AverageValue
+        averageValue: "50"  # Scale up if latency > 50ms
+  
+  # Scaling behavior for smooth performance
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+      - type: Pods
+        value: 5
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 10
+        periodSeconds: 30
+      selectPolicy: Max
+
+---
+# Vertical Pod Autoscaler for resource optimization
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: hyperconformal-vpa
+  namespace: hyperconformal-production
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hyperconformal-production
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+    - containerName: hyperconformal-api
+      maxAllowed:
+        cpu: 8000m
+        memory: 16Gi
+      minAllowed:
+        cpu: 1000m
+        memory: 2Gi
+      controlledResources: ["cpu", "memory"]
+    - containerName: monitoring-sidecar
+      maxAllowed:
+        cpu: 200m
+        memory: 256Mi
+      minAllowed:
+        cpu: 50m
+        memory: 64Mi
+      controlledResources: ["cpu", "memory"]
+
+---
+# Pod Disruption Budget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hyperconformal-pdb
+  namespace: hyperconformal-production
+spec:
+  minAvailable: 75%  # Always keep 75% of pods running
+  selector:
+    matchLabels:
+      app: hyperconformal
+      component: api
+
+---
+# Network Policy for security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hyperconformal-network-policy
+  namespace: hyperconformal-production
+spec:
+  podSelector:
+    matchLabels:
+      app: hyperconformal
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from load balancer
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Allow traffic from monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8081
+  # Allow inter-pod communication
+  - from:
+    - podSelector:
+        matchLabels:
+          app: hyperconformal
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+    - protocol: TCP
+      port: 8082
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow external API calls
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+  # Allow database connections
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
