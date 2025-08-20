@@ -5,3 +5,4 @@ venv/
 .coverage
 htmlcov/
 .pytest_cache/
+hyperconformal_env/
