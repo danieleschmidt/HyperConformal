@@ -27,6 +27,7 @@ include_directories(include)
 # Source files
 set(SOURCES
     src/hyperconformal.c
+    src/hierarchical_conformal.c
 )
 
 # Create library

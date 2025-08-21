@@ -32,6 +32,7 @@ typedef struct {
     uint16_t calibration_size;
     float alpha;
     uint8_t score_type;
+    uint8_t num_classes;
 } conformal_model_t;
 
 // Core HDC operations (binary/ternary optimized for MCUs)
