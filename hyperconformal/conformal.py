@@ -42,11 +42,16 @@ class ConformalPredictor(ABC):
         """Calibrate the conformal predictor using calibration data."""
         self.calibration_scores = self.compute_nonconformity_score(predictions, labels)
         
-        # Compute (1-alpha)(1+1/n) quantile as per theory
+        # Compute quantile using conformal prediction formula
         n = len(self.calibration_scores)
-        level = np.ceil((n + 1) * (1 - self.alpha)) / n
+        # For finite sample correction: (n+1) * (1-alpha) / n
+        level = (n + 1) * (1 - self.alpha) / n
         level = min(level, 1.0)  # Ensure level doesn't exceed 1.0
-        self.quantile = torch.quantile(self.calibration_scores, level)
+        
+        # Use empirical quantile (more robust than torch.quantile for edge cases)
+        sorted_scores = torch.sort(self.calibration_scores)[0]
+        quantile_idx = min(int(np.ceil(level * n) - 1), n - 1)
+        self.quantile = sorted_scores[quantile_idx]
     
     @abstractmethod
     def predict_set(
@@ -129,13 +134,16 @@ class ClassificationConformalPredictor(ConformalPredictor):
                 sorted_probs, sorted_indices = torch.sort(pred, descending=True)
                 cumsum = torch.cumsum(sorted_probs, dim=0)
                 
-                # Add randomization for threshold
-                random_threshold = self.quantile - torch.rand(1).item() * sorted_probs
+                # Find the cutoff point where cumsum + randomization exceeds quantile
+                # Add uniform random variable for each class
+                U = torch.rand_like(sorted_probs)
+                randomized_cumsum = cumsum - U * sorted_probs
                 
-                # Find cutoff point
-                include_mask = cumsum <= random_threshold
+                # Include classes where randomized cumsum <= quantile
+                include_mask = randomized_cumsum <= self.quantile
+                
+                # Ensure at least the top class is included
                 if not include_mask.any():
-                    # Include at least the top class
                     include_mask[0] = True
                 
                 included_classes = sorted_indices[include_mask].tolist()
@@ -249,7 +257,14 @@ class AdaptiveConformalPredictor(ConformalPredictor):
     
     def get_current_coverage_estimate(self) -> Optional[float]:
         """Estimate current coverage based on recent data."""
-        if len(self.scores_buffer) < 10 or self.quantile is None:
+        if len(self.scores_buffer) < 10:
+            return None
+            
+        # Recalibrate if needed
+        if self.quantile is None:
+            self._recalibrate()
+            
+        if self.quantile is None:
             return None
         
         scores = torch.tensor(list(self.scores_buffer))

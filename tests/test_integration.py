@@ -324,6 +324,7 @@ class TestRobustnessAndEdgeCases:
         X, y = make_classification(
             n_samples=300,
             n_features=10,
+            n_informative=5,  # Need enough informative features for 3 classes
             n_classes=3,
             weights=[0.8, 0.15, 0.05],  # Very imbalanced
             random_state=42
@@ -354,6 +355,7 @@ class TestRobustnessAndEdgeCases:
         X, y = make_classification(
             n_samples=1000,
             n_features=50,
+            n_informative=10,  # Need enough informative features for 4 classes
             n_classes=4,
             random_state=42
         )
@@ -372,7 +374,7 @@ class TestRobustnessAndEdgeCases:
             # Check memory footprint is reasonable
             footprint = model.memory_footprint()
             expected_size = 4 * hv_dim * 4  # 4 classes * hv_dim * 4 bytes per float
-            assert footprint >= expected_size  # Should include at least the prototypes
+            assert footprint['total'] >= expected_size  # Should include at least the prototypes
 
 
 if __name__ == "__main__":

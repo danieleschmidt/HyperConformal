@@ -69,6 +69,20 @@ if GLOBAL_FEATURES_AVAILABLE:
         "PlatformConfig", "OptimizedOperations"
     ])
 
+# Security and monitoring extensions
+try:
+    from .security_monitor import SecurityManager, enable_security, disable_security
+    SECURITY_FEATURES_AVAILABLE = True
+except ImportError:
+    SECURITY_FEATURES_AVAILABLE = False
+
+# Performance optimization extensions
+try:
+    from .performance_optimizer import PerformanceOptimizer, PerformanceConfig, enable_performance_optimization
+    PERFORMANCE_FEATURES_AVAILABLE = True
+except ImportError:
+    PERFORMANCE_FEATURES_AVAILABLE = False
+
 # Advanced research extensions
 try:
     from .quantum import QuantumHyperConformal, QuantumHDCEncoder, QuantumConformalPredictor
@@ -79,6 +93,20 @@ try:
     ADVANCED_FEATURES_AVAILABLE = True
 except ImportError:
     ADVANCED_FEATURES_AVAILABLE = False
+
+if SECURITY_FEATURES_AVAILABLE:
+    __all__.extend([
+        "SecurityManager", 
+        "enable_security", 
+        "disable_security"
+    ])
+
+if PERFORMANCE_FEATURES_AVAILABLE:
+    __all__.extend([
+        "PerformanceOptimizer",
+        "PerformanceConfig", 
+        "enable_performance_optimization"
+    ])
 
 if ADVANCED_FEATURES_AVAILABLE:
     __all__.extend([

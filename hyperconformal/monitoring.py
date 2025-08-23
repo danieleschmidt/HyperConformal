@@ -344,8 +344,15 @@ class AlertManager:
                     # Create evaluation context
                     context = self._create_evaluation_context(window_data)
                     
-                    # Evaluate condition
-                    if eval(rule.condition, {"__builtins__": {}}, context):
+                    # Evaluate condition safely (replace eval with safe expression evaluation)
+                    try:
+                        # For now, use a simple condition parser instead of eval
+                        condition_met = self._safe_evaluate_condition(rule.condition, context)
+                    except Exception as e:
+                        logger.warning(f"Failed to evaluate rule condition '{rule.condition}': {e}")
+                        condition_met = False
+                    
+                    if condition_met:
                         alert = {
                             'rule_name': rule.name,
                             'severity': rule.severity,
@@ -624,6 +631,43 @@ class HyperConformalMonitor:
             'recent_alerts': recent_alerts,
             'health_info': health_info
         }
+    
+    def _safe_evaluate_condition(self, condition: str, context: Dict) -> bool:
+        """Safely evaluate rule condition without using eval()."""
+        # Simple condition parser for common patterns
+        # This replaces the dangerous eval() with safe condition matching
+        
+        # Replace context variables in condition
+        for var, value in context.items():
+            condition = condition.replace(var, str(value))
+        
+        # Handle simple comparison operators
+        if '<' in condition:
+            parts = condition.split('<')
+            if len(parts) == 2:
+                try:
+                    left = float(parts[0].strip())
+                    right = float(parts[1].strip()) 
+                    return left < right
+                except ValueError:
+                    return False
+        elif '>' in condition:
+            parts = condition.split('>')
+            if len(parts) == 2:
+                try:
+                    left = float(parts[0].strip())
+                    right = float(parts[1].strip())
+                    return left > right
+                except ValueError:
+                    return False
+        elif '==' in condition:
+            parts = condition.split('==')
+            if len(parts) == 2:
+                return parts[0].strip() == parts[1].strip()
+        
+        # Default to False for unknown conditions
+        logger.warning(f"Unknown condition format: {condition}")
+        return False
     
     def export_metrics(self, format: str = 'json') -> str:
         """Export metrics in specified format."""
