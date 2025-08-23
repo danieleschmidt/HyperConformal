@@ -12,6 +12,8 @@ from sklearn.model_selection import train_test_split
 
 from .encoders import BaseEncoder, RandomProjection
 from .conformal import ClassificationConformalPredictor, AdaptiveConformalPredictor
+from .security_monitor import get_security_manager
+from .performance_optimizer import get_performance_optimizer, performance_monitor, memory_efficient
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -152,6 +154,8 @@ class ConformalHDC:
                     f"{context} labels must be in range [0, {self.num_classes-1}], got [{y_array.min()}, {y_array.max()}]"
                 )
     
+    @performance_monitor
+    @memory_efficient
     def fit(
         self, 
         X: Union[torch.Tensor, np.ndarray], 
@@ -179,6 +183,11 @@ class ConformalHDC:
         # Input validation
         if self.validate_inputs:
             self._validate_input_data(X, y, "training")
+        
+        # Security validation and logging
+        security_manager = get_security_manager()
+        if security_manager and not security_manager.validate_training_request(X, y):
+            raise HyperConformalError("Training request blocked by security policy")
         
         # Log data statistics
         if isinstance(X, np.ndarray):
@@ -232,9 +241,10 @@ class ConformalHDC:
         except Exception as e:
             raise CalibrationError(f"Failed to split data for calibration: {e}")
         
-        # Encode training data with error handling
+        # Encode training data with error handling and optimization
         try:
-            encoded_train = self.encoder.encode(X_train)
+            perf_optimizer = get_performance_optimizer()
+            encoded_train = perf_optimizer.cached_encode(self.encoder.encode, X_train)
             logger.debug(f"Encoded training data: shape={encoded_train.shape}, dtype={encoded_train.dtype}")
         except Exception as e:
             raise HyperConformalError(f"Failed to encode training data: {e}")
@@ -348,6 +358,31 @@ class ConformalHDC:
         probabilities = self.predict_proba(X)
         return torch.argmax(probabilities, dim=1).cpu().numpy()
     
+    def _validate_input(self, X: torch.Tensor) -> torch.Tensor:
+        """Validate input tensor for NaN/Inf values."""
+        # Always check for problematic values and warn
+        has_nan = torch.isnan(X).any()
+        has_inf = torch.isinf(X).any()
+        
+        if has_nan:
+            warnings.warn(
+                "Input contains NaN values. These will be replaced with zeros.",
+                UserWarning
+            )
+            
+        if has_inf:
+            warnings.warn(
+                "Input contains Inf values. These will be clipped to finite range.",
+                UserWarning
+            )
+            
+        # Always clean the data to prevent downstream errors
+        if has_nan or has_inf:
+            X = torch.nan_to_num(X, nan=0.0, posinf=1e6, neginf=-1e6)
+            
+        return X
+
+    @performance_monitor 
     def predict_proba(self, X: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
         """
         Predict class probabilities.
@@ -362,7 +397,23 @@ class ConformalHDC:
             X = torch.from_numpy(X).float()
         X = X.to(self.device)
         
-        return self._predict_proba(X)
+        # Validate input
+        X = self._validate_input(X)
+        
+        # Security validation and logging
+        security_manager = get_security_manager()
+        if security_manager and not security_manager.validate_prediction_request(X):
+            raise HyperConformalError("Prediction request blocked by security policy")
+        
+        # Use performance-optimized prediction
+        perf_optimizer = get_performance_optimizer()
+        probabilities = perf_optimizer.batched_prediction(self._predict_proba, X)
+        
+        # Validate output for anomalies
+        if security_manager:
+            security_manager.validate_prediction_output(probabilities)
+        
+        return probabilities
     
     def predict_set(self, X: Union[torch.Tensor, np.ndarray]) -> List[List[int]]:
         """

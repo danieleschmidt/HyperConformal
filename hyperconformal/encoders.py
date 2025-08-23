@@ -30,7 +30,9 @@ class BaseEncoder(ABC, nn.Module):
     
     def memory_footprint(self) -> int:
         """Estimate memory footprint in bytes."""
-        return sum(p.numel() * p.element_size() for p in self.parameters())
+        param_size = sum(p.numel() * p.element_size() for p in self.parameters())
+        buffer_size = sum(b.numel() * b.element_size() for b in self.buffers())
+        return param_size + buffer_size
 
 
 class RandomProjection(BaseEncoder):
