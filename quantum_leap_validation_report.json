@@ -1,0 +1,76 @@
+{
+  "validation_summary": {
+    "adaptive_dimensionality": {
+      "mean_accuracy": 0.8408653871252878,
+      "mean_coverage": 0.852982114675427,
+      "mean_efficiency": 0.7077169551722249,
+      "mean_memory_kb": 348.04552401534625,
+      "mean_energy_consumption": 0.2901254353048417,
+      "std_accuracy": 0.0707762204527104,
+      "std_coverage": 0.00917339275577927,
+      "execution_time_ms": 0.00446319580078125
+    },
+    "quantum_superposition": {
+      "mean_accuracy": 0.8264254478300047,
+      "mean_coverage": 0.88,
+      "mean_efficiency": 1139.3558009233827,
+      "mean_memory_kb": 0.034375,
+      "mean_energy_consumption": 8.800000000000001e-05,
+      "std_accuracy": 0.019087311630668905,
+      "std_coverage": 0.0,
+      "execution_time_ms": 0.002079010009765625
+    },
+    "neuromorphic_spiking": {
+      "mean_accuracy": 0.8911809737004365,
+      "mean_coverage": 0.8810615663009405,
+      "mean_efficiency": 0.16602654586385143,
+      "mean_memory_kb": 5.78125,
+      "mean_energy_consumption": 0.11864000000000001,
+      "std_accuracy": 0.03566825052744361,
+      "std_coverage": 0.027862588251976718,
+      "execution_time_ms": 0.003204345703125
+    },
+    "hierarchical_calibration": {
+      "mean_accuracy": 0.9195704425462767,
+      "mean_coverage": 0.8896262396656099,
+      "mean_efficiency": 0.4958199811421719,
+      "mean_memory_kb": 0.4375,
+      "mean_energy_consumption": 0.05495819981142172,
+      "std_accuracy": 0.02351638208159782,
+      "std_coverage": 0.03542673402062663,
+      "execution_time_ms": 0.0049877166748046875
+    }
+  },
+  "statistical_significance": {
+    "adaptive_dimensionality": {
+      "coverage_above_90%": 0.0,
+      "efficiency_mean": 0.7077169551722249,
+      "efficiency_std": 0.11836219017750489,
+      "memory_efficiency_mean": 2.622512215155055e-06
+    },
+    "quantum_superposition": {
+      "coverage_above_90%": 0.0,
+      "efficiency_mean": 1139.3558009233827,
+      "efficiency_std": 539.2761372970493,
+      "memory_efficiency_mean": 0.028483895023084568
+    },
+    "neuromorphic_spiking": {
+      "coverage_above_90%": 0.24,
+      "efficiency_mean": 0.16602654586385143,
+      "efficiency_std": 0.06939924105770366,
+      "memory_efficiency_mean": 0.00015670772497603202
+    },
+    "hierarchical_calibration": {
+      "coverage_above_90%": 0.48,
+      "efficiency_mean": 0.4958199811421719,
+      "efficiency_std": 0.12510724624249756,
+      "memory_efficiency_mean": 0.0022061104503836707
+    }
+  },
+  "performance_comparison": {},
+  "breakthrough_metrics": {
+    "overall_performance_gain": 0.02295360329470759,
+    "energy_efficiency_improvement": 8.428860418071476,
+    "memory_optimization_factor": 1136.3636363636363
+  }
+}
