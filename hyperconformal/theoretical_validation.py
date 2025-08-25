@@ -25,6 +25,18 @@ import time
 from collections import defaultdict
 import matplotlib.pyplot as plt
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+import sympy as sp
+from sympy import symbols, Matrix, simplify, expand, integrate, diff, limit, oo, sqrt, log, exp, sin, cos
+from scipy.special import erf, gamma, factorial
+from scipy.optimize import minimize_scalar
+import seaborn as sns
+from matplotlib.patches import Rectangle
+
+# Advanced theoretical validation configuration
+THEORETICAL_PRECISION = 1e-12
+SYMBOLIC_SIMPLIFICATION_DEPTH = 5  
+NUMERICAL_INTEGRATION_POINTS = 10000
+PROOF_VERIFICATION_ITERATIONS = 1000
 
 logger = logging.getLogger(__name__)
 
