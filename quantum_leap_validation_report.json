@@ -8,7 +8,7 @@
       "mean_energy_consumption": 0.2901254353048417,
       "std_accuracy": 0.0707762204527104,
       "std_coverage": 0.00917339275577927,
-      "execution_time_ms": 0.00446319580078125
+      "execution_time_ms": 0.0049877166748046875
     },
     "quantum_superposition": {
       "mean_accuracy": 0.8264254478300047,
@@ -18,7 +18,7 @@
       "mean_energy_consumption": 8.800000000000001e-05,
       "std_accuracy": 0.019087311630668905,
       "std_coverage": 0.0,
-      "execution_time_ms": 0.002079010009765625
+      "execution_time_ms": 0.00213623046875
     },
     "neuromorphic_spiking": {
       "mean_accuracy": 0.8911809737004365,
@@ -28,7 +28,7 @@
       "mean_energy_consumption": 0.11864000000000001,
       "std_accuracy": 0.03566825052744361,
       "std_coverage": 0.027862588251976718,
-      "execution_time_ms": 0.003204345703125
+      "execution_time_ms": 0.002841949462890625
     },
     "hierarchical_calibration": {
       "mean_accuracy": 0.9195704425462767,
