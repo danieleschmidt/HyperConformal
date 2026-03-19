@@ -2,368 +2,221 @@
 
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![C++17](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
-[![TorchHD](https://img.shields.io/badge/TorchHD-Compatible-green.svg)](https://github.com/hyperdimensional-computing/torchhd)
+[![Tests](https://img.shields.io/badge/tests-35%20passing-brightgreen.svg)](#tests)
 
-## Overview
+## What This Is
 
-HyperConformal brings **calibrated uncertainty quantification** to hyperdimensional computing (HDC). This is the first library combining HDC's ultra-efficient binary/complex vector operations with conformal prediction's statistical guarantees—perfect for ultra-low-power MCUs where traditional neural networks' softmax computations are prohibitively expensive.
+**HyperConformal** combines two ideas that are individually well-studied but rarely combined:
 
-## 🔋 Why HyperConformal?
+1. **Hyperdimensional Computing (HDC)** — a brain-inspired classification paradigm that
+   operates on high-dimensional binary vectors
+2. **Conformal Prediction (CP)** — a distribution-free framework for producing prediction
+   sets with a **provable coverage guarantee**
 
-Traditional ML on edge devices faces a dilemma:
-- **DNNs**: Accurate but power-hungry (softmax alone can dominate MCU power budget)
-- **HDC**: Ultra-efficient but lacks uncertainty estimates
+The result: a classifier that is fast enough for microcontrollers with <1 MB RAM *and* can
+say "I'm not sure" with statistical backing.
 
-HyperConformal solves this by providing:
-- **10,000x lower power** than softmax-based uncertainty
-- **Rigorous coverage guarantees** without distributional assumptions
-- **Binary arithmetic** compatible with 8-bit MCUs
-- **Streaming calibration** for online learning
+---
 
-## Installation
+## What is Hyperdimensional Computing?
 
-```bash
-# Clone repository
-git clone https://github.com/yourusername/hyperconformal.git
-cd hyperconformal
+Traditional neural networks represent data as real-valued activations and require
+floating-point multiply-accumulate (MAC) operations — expensive on embedded hardware.
 
-# Install Python package
-pip install -e .
+HDC takes a different approach inspired by how biological neurons work in high-dimensional
+spaces:
 
-# Build C++ libraries for embedded deployment
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j8
+- **Hypervectors** are vectors of dimension d ≥ 1000 with binary elements (±1)
+- A random projection matrix Φ ∈ {−1,+1}^{n_features × d} maps inputs to hypervectors:
+  ```
+  h = sign(Φᵀ x)
+  ```
+- Class **prototypes** are created by *superposition* (element-wise majority vote over all
+  training examples for that class)
+- Classification is argmax **cosine similarity** between the query hypervector and each
+  prototype
 
-# Run tests
-make test
+**Key properties of high-dimensional binary spaces:**
+- Random hypervectors are nearly orthogonal with high probability (concentration of measure)
+- Arithmetic is dominated by popcount / XOR — single CPU instructions on ARM Cortex-M
+- A full classifier (projection matrix + prototypes) for 10-class problems at d=1000
+  fits in ~12 KB — well within a typical MCU's SRAM
+
+---
+
+## What Conformal Prediction Adds
+
+HDC gives you a point prediction.  But on safety-critical edge devices (medical wearables,
+industrial sensors, autonomous vehicles), you often need to know *when not to trust* the
+prediction.
+
+Conformal prediction addresses this with a mathematical guarantee.
+
+### The Coverage Guarantee
+
+Given a **calibration set** {(x₁,y₁), …, (xₙ,yₙ)} held out from training, split
+conformal prediction constructs **prediction sets** Ĉ(x) such that:
+
 ```
+P(y_test ∈ Ĉ(x_test)) ≥ 1 − α
+```
+
+This holds **exactly** (not asymptotically) for any α ∈ (0,1), any classifier, and any
+data distribution — as long as the calibration and test examples are exchangeable
+(i.e., i.i.d. is sufficient).
+
+No assumptions about Gaussian noise, calibrated softmax, or model quality.
+
+### How It Works (Margin-Based Score)
+
+For each calibration example (xᵢ, yᵢ):
+1. Compute similarity scores f_c(xᵢ) for all classes c
+2. Compute **nonconformity score**:
+   ```
+   s_i = 1 − (f_{y_i}(xᵢ) − max_{c ≠ y_i} f_c(xᵢ))
+   ```
+   High score = true class was NOT clearly the best → nonconforming
+
+3. The conformal quantile is:
+   ```
+   q̂ = ⌈(n+1)(1−α)⌉ / n  empirical quantile of {s₁, …, sₙ}
+   ```
+
+At test time, include class c in the prediction set if:
+```
+1 − (f_c(x) − max_{c'≠c} f_{c'}(x)) ≤ q̂
+```
+
+---
+
+## Why This Matters for Edge AI
+
+| Concern | Traditional DNN | HyperConformal |
+|---------|----------------|----------------|
+| RAM | 100 KB–10 MB | **2–50 KB** |
+| Power per inference | mW | **µW** |
+| Uncertainty estimate | Softmax (uncalibrated) | **Provable coverage** |
+| Training time | Minutes–hours | **Milliseconds** |
+| MCU compatibility | Cortex-M33+ | **Cortex-M0+** |
+
+The target hardware is microcontrollers like the Arduino Nano 33 BLE (ARM Cortex-M4F,
+256 KB flash, 64 KB SRAM).  A d=1000 binary HDC model with conformal calibration
+occupies ~4 KB — leaving the rest of RAM for sensor buffers and application logic.
+
+---
 
 ## Quick Start
 
-### Basic Classification with Guarantees
+### Requirements
+
+```
+numpy >= 1.21
+pytest (for tests)
+```
+
+No PyTorch, no scikit-learn, no GPU required.
+
+### Installation
+
+```bash
+git clone https://github.com/danieleschmidt/HyperConformal
+cd HyperConformal
+```
+
+### Run the Demo
+
+```bash
+python demo.py
+```
+
+Expected output:
+```
+HyperConformal Demo: HDC + Conformal Prediction
+...
+Training accuracy  : 0.950
+Empirical coverage : 1.000  (✓ ≥ 0.90)
+Avg set size       : 1.17
+Coverage guarantee holds: True
+```
+
+### Code Example
 
 ```python
-import hyperconformal as hc
-import torch
+import numpy as np
+from hdc.encoder import HyperdimensionalEncoder
+from conformal.predictor import ConformalPredictor
 
-# Create HDC encoder with conformal wrapper
-encoder = hc.RandomProjection(
-    input_dim=784,      # MNIST
-    hv_dim=10000,       # Hypervector dimension
-    quantization='binary'  # or 'ternary', 'complex'
-)
+# 1. Train HDC classifier
+encoder = HyperdimensionalEncoder(d=1000, n_features=2, seed=42)
+encoder.fit(X_train, y_train)
 
-# Initialize conformal predictor
-predictor = hc.ConformalHDC(
-    encoder=encoder,
-    num_classes=10,
-    alpha=0.1  # Guarantee 90% coverage
-)
+# 2. Calibrate conformal predictor (α=0.1 → ≥90% coverage)
+cp = ConformalPredictor(classifier=encoder, alpha=0.10)
+cp.calibrate(X_cal, y_cal)
 
-# Train on binary hypervectors
-predictor.fit(X_train, y_train)
+# 3. Get prediction sets with coverage guarantee
+psets = cp.predict_set(X_test)   # e.g. [[0], [1], [0, 1], [1], ...]
 
-# Get prediction sets with guarantees
-pred_sets = predictor.predict_set(X_test)
-
-# Verify coverage
-coverage = hc.compute_coverage(pred_sets, y_test)
-print(f"Empirical coverage: {coverage:.1%}")  # ≈ 90%
+# 4. Verify coverage
+print(cp.coverage(X_test, y_test))   # ≥ 0.90
+print(cp.avg_set_size(X_test))       # efficiency: ideally close to 1.0
 ```
 
-### Ultra-Low-Power MCU Deployment
+---
 
-```c
-// C implementation for ARM Cortex-M0+
-#include "hyperconformal.h"
+## Module Reference
 
-// Pre-computed model (only 1.2KB!)
-const uint8_t model[] = {
-    #include "mnist_model.h"
-};
+### `hdc/encoder.py` — HyperdimensionalEncoder
 
-// Classify with uncertainty (using only XOR and popcount)
-void classify_with_confidence(uint8_t* image_bits, 
-                             uint8_t* prediction,
-                             uint8_t* confidence) {
-    hypervector_t encoded;
-    
-    // Binary projection (just XORs)
-    hc_encode_binary(image_bits, &encoded, &model);
-    
-    // Hamming distance classification
-    class_scores_t scores;
-    hc_classify(&encoded, &model, &scores);
-    
-    // Conformal calibration (no floating point!)
-    hc_conformal_predict(&scores, &model.calibration,
-                        prediction, confidence);
-}
+```
+HyperdimensionalEncoder(d=1000, n_features=2, seed=42)
+  .fit(X_train, y_train)          → self
+  .encode(X)                      → bipolar hypervectors ∈ {−1,+1}^d
+  .predict_scores(X)              → similarity scores ∈ [0,1]^n_classes
+  .predict(X)                     → point predictions
 ```
 
-## Core Features
+### `conformal/predictor.py` — ConformalPredictor
 
-### 1. Multiple HDC Architectures
-
-```python
-# Supported HDC encoders
-encoders = {
-    'random_projection': hc.RandomProjection(quantization='binary'),
-    'level_hdc': hc.LevelHDC(levels=100, circular=True),
-    'spatial_hdc': hc.SpatialHDC(resolution=(28, 28)),
-    'ngram_hdc': hc.NgramHDC(n=3, vocabulary_size=10000),
-    'graph_hdc': hc.GraphHDC(walk_length=10)
-}
-
-# All compatible with conformal wrappers
-for name, encoder in encoders.items():
-    conformal = hc.ConformalHDC(encoder)
-    print(f"{name}: {conformal.memory_footprint()} bytes")
+```
+ConformalPredictor(classifier, alpha=0.10)
+  .calibrate(X_cal, y_cal)        → self  (sets q̂)
+  .predict_set(X)                 → List[List[int]]  (prediction sets)
+  .predict(X)                     → point predictions
+  .coverage(X_test, y_test)       → float ∈ [0,1]
+  .avg_set_size(X_test)           → float (efficiency)
 ```
 
-### 2. Adaptive Conformal Calibration
+---
 
-```python
-# Online calibration for streaming data
-stream_predictor = hc.AdaptiveConformalHDC(
-    encoder=encoder,
-    window_size=1000,
-    update_frequency=100
-)
+## Tests
 
-# Process data stream
-for batch in data_stream:
-    # Predictions with time-varying guarantees
-    pred_sets = stream_predictor.predict_set(batch)
-    
-    # Update calibration
-    stream_predictor.update(batch, labels)
-    
-    # Monitor efficiency
-    avg_set_size = pred_sets.mean_size()
-    print(f"Average prediction set size: {avg_set_size:.2f}")
+```bash
+# Core HDC + conformal tests (35 tests, no external deps beyond numpy)
+python -m pytest tests/test_hdc.py tests/test_conformal.py -v
+
+# Full test suite (requires PyTorch for advanced features)
+python -m pytest tests/ -v
 ```
 
-### 3. Complex-Valued HDC for Signal Processing
+---
 
-```python
-# Complex hypervectors for frequency-domain tasks
-complex_encoder = hc.ComplexHDC(
-    dim=10000,
-    quantization_levels=4  # 4-PSK style
-)
+## Connection to Research
 
-# Conformal prediction on complex vectors
-complex_predictor = hc.ConformalComplexHDC(
-    encoder=complex_encoder,
-    similarity='complex_dot'  # Uses angle information
-)
+This project sits at the intersection of two active research areas:
 
-# Example: Modulation classification with guarantees
-signal = load_rf_signal()
-pred_set = complex_predictor.predict_set(signal)
-print(f"Possible modulations: {pred_set}")
-```
+- **HDC for edge AI**: Rahimi & Recht (2007), Kanerva (2009), Imani et al. (2019),
+  and the broader brain-inspired computing literature
+- **Conformal prediction**: Vovk, Gammerman & Shafer (2005); Angelopoulos & Bates (2022)
+  *"A Gentle Introduction to Conformal Prediction"*
 
-## Theoretical Guarantees
+The conformal + HDC combination is particularly relevant for **embodied reasoning** (ER)
+systems on constrained hardware: when a wearable device must decide whether to alert a
+clinician, a prediction set that provably contains the true label is far more useful than
+a miscalibrated confidence score.
 
-### Coverage Under Random Projection
-
-**Theorem 1**: For binary random projection HDC with dimension $d$, the conformal prediction sets satisfy:
-$$P(Y_{n+1} \in C_\alpha(X_{n+1})) \geq 1 - \alpha - O(1/\sqrt{d})$$
-
-**Proof**: See [notebooks/theory/coverage_proof.ipynb](notebooks/theory/coverage_proof.ipynb)
-
-### Power-Accuracy Trade-offs
-
-| Method | Accuracy | Coverage | Power (μW) | Ops/Inference |
-|--------|----------|----------|------------|---------------|
-| DNN + Softmax | 98.2% | N/A | 2840 | 1.2M FLOPS |
-| DNN + Conformal | 98.2% | 90.1% | 3150 | 1.4M FLOPS |
-| HDC (no calib) | 95.1% | N/A | 0.31 | 80K XOR |
-| **HyperConformal** | 95.1% | 90.3% | 0.38 | 85K XOR |
-
-## Advanced Applications
-
-### 1. Federated Learning with Privacy
-
-```python
-# Federated HDC with conformal guarantees
-fed_system = hc.FederatedHyperConformal(
-    num_clients=100,
-    hv_dim=10000,
-    differential_privacy=True,
-    epsilon=1.0
-)
-
-# Each client trains locally on binary vectors
-for client_id in range(100):
-    local_model = fed_system.get_client_model(client_id)
-    local_model.fit(client_data[client_id])
-    
-    # Upload only binary hypervector updates
-    update = local_model.get_binary_update()  # Just 1.25KB!
-    fed_system.aggregate_update(client_id, update)
-
-# Global model with calibrated predictions
-global_model = fed_system.get_global_model()
-```
-
-### 2. Neuromorphic Hardware Integration
-
-```python
-# Deploy to neuromorphic chips (Loihi, TrueNorth)
-neuromorphic = hc.NeuromorphicHDC(
-    backend='loihi2',
-    spike_encoding='rate',
-    energy_model='measured'
-)
-
-# Conformal calibration in spiking domain
-spike_predictor = hc.SpikingConformalHDC(
-    neuromorphic_model=neuromorphic,
-    calibration_method='spike_count'
-)
-
-# Energy-aware prediction sets
-pred_set, energy_used = spike_predictor.predict_with_energy(
-    spike_train,
-    energy_budget=1.0  # μJ
-)
-```
-
-### 3. Symbolic Reasoning with Guarantees
-
-```python
-# HDC for symbolic AI with conformal bounds
-symbolic_hdc = hc.SymbolicHDC(
-    atom_dim=10000,
-    binding='xor',
-    bundling='majority'
-)
-
-# Reasoning with confidence
-reasoner = hc.ConformalReasoner(symbolic_hdc)
-
-# Compositional queries with guarantees
-query = "capital(France) ∧ language(X) → speaks(X, French)"
-answers = reasoner.query(
-    query,
-    confidence_level=0.95
-)
-
-for answer, confidence in answers:
-    print(f"{answer}: {confidence:.1%} confident")
-```
-
-## Benchmarks
-
-### Memory Footprint (Arduino Nano 33 BLE)
-
-| Model | Flash | RAM | Inference Time | Power |
-|-------|-------|-----|----------------|-------|
-| TinyML CNN | 128KB | 45KB | 125ms | 8.2mW |
-| Binary HDC | 8KB | 2KB | 0.8ms | 0.05mW |
-| **HyperConformal** | 11KB | 2.5KB | 0.9ms | 0.06mW |
-
-### Coverage Guarantees Across Datasets
-
-| Dataset | Dimension | Coverage Target | Achieved | Set Size |
-|---------|-----------|-----------------|----------|----------|
-| MNIST | 10,000 | 90% | 90.2% | 1.31 |
-| Fashion-MNIST | 10,000 | 90% | 89.8% | 1.87 |
-| ISOLET | 8,000 | 95% | 95.1% | 2.43 |
-| HAR | 5,000 | 85% | 85.3% | 1.15 |
-
-## C++ Embedded API
-
-### Minimal Example (Arduino)
-
-```cpp
-#include <HyperConformal.h>
-
-// Initialize with pre-trained model
-HyperConformal hc(MODEL_BINARY_BLOB, MODEL_SIZE);
-
-void setup() {
-    Serial.begin(115200);
-    
-    // Load calibration from EEPROM
-    hc.loadCalibration(EEPROM_ADDR);
-}
-
-void loop() {
-    // Read sensor data
-    uint8_t sensor_data[SENSOR_BYTES];
-    readSensors(sensor_data);
-    
-    // Classify with confidence
-    uint8_t prediction;
-    uint8_t confidence;  // 0-255 scale
-    
-    hc.predict(sensor_data, &prediction, &confidence);
-    
-    // Only act on high-confidence predictions
-    if (confidence > 200) {  // ~78%
-        executeAction(prediction);
-    }
-    
-    delay(100);
-}
-```
-
-## Research Extensions
-
-### Current Research Directions
-
-1. **Quantum HDC**: Conformal prediction for quantum hypervectors
-2. **Continual Learning**: Lifelong calibration without forgetting
-3. **Hardware-Aware Quantization**: Optimal bit-width selection
-4. **Adversarial Robustness**: Certified defenses via randomized smoothing
-
-### Adding Custom HDC Encoders
-
-```python
-@hc.register_encoder
-class MyCustomHDC(hc.BaseEncoder):
-    def encode(self, x):
-        # Your encoding logic
-        return hypervector
-    
-    def similarity(self, hv1, hv2):
-        # Custom similarity metric
-        return score
-```
-
-## Contributing
-
-We welcome contributions in:
-- Novel HDC architectures
-- Embedded optimizations
-- Theoretical analysis
-- Real-world applications
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## Citation
-
-```bibtex
-@software{hyperconformal2025,
-  title={HyperConformal: Bringing Conformal Prediction to Hyperdimensional Computing},
-  author={Daniel Schmidt},
-  year={2025},
-  url={https://github.com/danieleschmidt/hyperconformal}
-}
-```
+---
 
 ## License
 
-BSD 3-Clause License - see [LICENSE](LICENSE) for details.
-
-## Acknowledgments
-
-- Built on [TorchHD](https://github.com/hyperdimensional-computing/torchhd)
-- Conformal prediction theory from [Angelopoulos & Bates 2023]
-- Supported by NSF grant on neuromorphic computing
+BSD 3-Clause. See [LICENSE](LICENSE).

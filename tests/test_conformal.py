@@ -1,255 +1,256 @@
 """
-Tests for conformal prediction algorithms.
+Unit tests for ConformalPredictor.
 """
 
-import pytest
-import torch
 import numpy as np
-from hyperconformal.conformal import (
-    ClassificationConformalPredictor, 
-    AdaptiveConformalPredictor,
-    RegressionConformalPredictor
-)
+import pytest
+from hdc.encoder import HyperdimensionalEncoder
+from conformal.predictor import ConformalPredictor
 
 
-class TestClassificationConformalPredictor:
-    """Test classification conformal predictor."""
-    
-    def test_aps_scoring(self):
-        """Test Adaptive Prediction Sets scoring."""
-        predictor = ClassificationConformalPredictor(alpha=0.1, score_type='aps')
-        
-        # Mock softmax predictions
-        predictions = torch.tensor([
-            [0.7, 0.2, 0.1],  # Confident prediction
-            [0.4, 0.35, 0.25],  # Less confident
-            [0.33, 0.33, 0.34]  # Very uncertain
-        ])
-        labels = torch.tensor([0, 1, 2])
-        
-        scores = predictor.compute_nonconformity_score(predictions, labels)
-        
-        assert len(scores) == 3
-        assert torch.all(scores >= 0)
-        assert torch.all(scores <= 1)
-        
-        # More confident predictions should have lower scores
-        # Example 2 (0.33, 0.33, 0.34) has highest prob for label 2, so lowest score
-        # Example 0 (0.7, 0.2, 0.1) has high prob for label 0, so medium score  
-        # Example 1 (0.4, 0.35, 0.25) has medium prob for label 1, so highest score
-        assert scores[2] < scores[0] < scores[1]
-    
-    def test_margin_scoring(self):
-        """Test margin-based scoring."""
-        predictor = ClassificationConformalPredictor(alpha=0.1, score_type='margin')
-        
-        predictions = torch.tensor([
-            [0.8, 0.15, 0.05],  # Large margin
-            [0.5, 0.4, 0.1],    # Medium margin
-            [0.4, 0.35, 0.25]   # Small margin
-        ])
-        labels = torch.tensor([0, 0, 0])
-        
-        scores = predictor.compute_nonconformity_score(predictions, labels)
-        
-        # Larger margins should give lower scores (better predictions)
-        assert scores[0] < scores[1] < scores[2]
-    
-    def test_calibration_and_prediction(self):
-        """Test calibration and prediction set generation."""
-        predictor = ClassificationConformalPredictor(alpha=0.2, score_type='aps')
-        
-        # Generate calibration data
-        n_cal = 100
-        n_classes = 3
-        
-        # Random predictions and labels
-        torch.manual_seed(42)
-        cal_predictions = torch.softmax(torch.randn(n_cal, n_classes), dim=1)
-        cal_labels = torch.randint(0, n_classes, (n_cal,))
-        
-        # Calibrate
-        predictor.calibrate(cal_predictions, cal_labels)
-        
-        # Make predictions
-        test_predictions = torch.softmax(torch.randn(20, n_classes), dim=1)
-        pred_sets = predictor.predict_set(test_predictions)
-        
-        assert len(pred_sets) == 20
-        for pred_set in pred_sets:
-            assert len(pred_set) >= 1  # At least one class
-            assert all(0 <= cls < n_classes for cls in pred_set)
-    
-    def test_coverage_guarantee(self):
-        """Test that coverage is approximately correct."""
-        np.random.seed(42)
-        torch.manual_seed(42)
-        
-        alpha = 0.1
-        predictor = ClassificationConformalPredictor(alpha=alpha, score_type='aps')
-        
-        n_samples = 1000
-        n_classes = 5
-        
-        # Generate well-calibrated predictions
-        cal_predictions = torch.softmax(torch.randn(n_samples, n_classes), dim=1)
-        cal_labels = torch.multinomial(cal_predictions, 1).squeeze()
-        
-        # Split for calibration and testing
-        split = n_samples // 2
-        predictor.calibrate(cal_predictions[:split], cal_labels[:split])
-        
-        # Test coverage
-        test_predictions = cal_predictions[split:]
-        test_labels = cal_labels[split:]
-        pred_sets = predictor.predict_set(test_predictions)
-        
-        coverage = sum(
-            1 for i, pred_set in enumerate(pred_sets)
-            if test_labels[i].item() in pred_set
-        ) / len(pred_sets)
-        
-        target_coverage = 1 - alpha
-        # Coverage should be close to target (within reasonable margin)
-        assert abs(coverage - target_coverage) < 0.1
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def make_trained_encoder(n_features=2, d=200, seed=0):
+    """Create and train an encoder on well-separated blobs."""
+    rng = np.random.default_rng(seed)
+    X0 = rng.standard_normal((80, n_features)) + np.array([-3] + [0] * (n_features - 1))
+    X1 = rng.standard_normal((80, n_features)) + np.array([+3] + [0] * (n_features - 1))
+    X_train = np.vstack([X0, X1])
+    y_train = np.array([0] * 80 + [1] * 80)
+    enc = HyperdimensionalEncoder(d=d, n_features=n_features, seed=seed + 1)
+    enc.fit(X_train, y_train)
+    return enc, X_train, y_train
 
 
-class TestAdaptiveConformalPredictor:
-    """Test adaptive conformal predictor."""
-    
-    def test_initialization(self):
-        """Test adaptive predictor initialization."""
-        predictor = AdaptiveConformalPredictor(
-            alpha=0.1,
-            window_size=100,
-            update_frequency=10,
-            score_type='aps'
+def make_cal_test(n_features=2, seed=10):
+    """Generate calibration and test sets."""
+    rng = np.random.default_rng(seed)
+    X0_cal = rng.standard_normal((50, n_features)) + np.array([-3] + [0] * (n_features - 1))
+    X1_cal = rng.standard_normal((50, n_features)) + np.array([+3] + [0] * (n_features - 1))
+    X_cal = np.vstack([X0_cal, X1_cal])
+    y_cal = np.array([0] * 50 + [1] * 50)
+
+    X0_test = rng.standard_normal((50, n_features)) + np.array([-3] + [0] * (n_features - 1))
+    X1_test = rng.standard_normal((50, n_features)) + np.array([+3] + [0] * (n_features - 1))
+    X_test = np.vstack([X0_test, X1_test])
+    y_test = np.array([0] * 50 + [1] * 50)
+
+    return (X_cal, y_cal), (X_test, y_test)
+
+
+# ---------------------------------------------------------------------------
+# Tests for __init__
+# ---------------------------------------------------------------------------
+
+class TestConformalPredictorInit:
+    def test_valid_init(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        assert cp.alpha == 0.1
+        assert cp.q_hat is None
+
+    def test_invalid_alpha_zero(self):
+        enc, _, _ = make_trained_encoder()
+        with pytest.raises(ValueError, match="alpha"):
+            ConformalPredictor(enc, alpha=0.0)
+
+    def test_invalid_alpha_one(self):
+        enc, _, _ = make_trained_encoder()
+        with pytest.raises(ValueError, match="alpha"):
+            ConformalPredictor(enc, alpha=1.0)
+
+    def test_invalid_classifier(self):
+        with pytest.raises(TypeError, match="predict_scores"):
+            ConformalPredictor(classifier=object(), alpha=0.1)
+
+
+# ---------------------------------------------------------------------------
+# Tests for calibration
+# ---------------------------------------------------------------------------
+
+class TestCalibration:
+    def test_calibrate_sets_q_hat(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        (X_cal, y_cal), _ = make_cal_test()
+        cp.calibrate(X_cal, y_cal)
+        assert cp.q_hat is not None
+        assert isinstance(cp.q_hat, float)
+
+    def test_calibrate_returns_self(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        (X_cal, y_cal), _ = make_cal_test()
+        result = cp.calibrate(X_cal, y_cal)
+        assert result is cp
+
+    def test_q_hat_finite(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.05)
+        (X_cal, y_cal), _ = make_cal_test()
+        cp.calibrate(X_cal, y_cal)
+        assert np.isfinite(cp.q_hat)
+
+    def test_stricter_alpha_higher_q_hat(self):
+        """Smaller α → more conservative → higher q̂."""
+        enc, _, _ = make_trained_encoder()
+        (X_cal, y_cal), _ = make_cal_test()
+        cp_strict = ConformalPredictor(enc, alpha=0.01)
+        cp_loose = ConformalPredictor(enc, alpha=0.20)
+        cp_strict.calibrate(X_cal, y_cal)
+        cp_loose.calibrate(X_cal, y_cal)
+        # Higher quantile level → higher q̂ → larger prediction sets
+        assert cp_strict.q_hat >= cp_loose.q_hat
+
+
+# ---------------------------------------------------------------------------
+# Tests for predict_set
+# ---------------------------------------------------------------------------
+
+class TestPredictSet:
+    def test_predict_before_calibrate_raises(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        with pytest.raises(RuntimeError, match="calibrate"):
+            cp.predict_set(np.array([[0.0, 0.0]]))
+
+    def test_output_shape(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        (X_cal, y_cal), (X_test, _) = make_cal_test()
+        cp.calibrate(X_cal, y_cal)
+        psets = cp.predict_set(X_test)
+        assert len(psets) == len(X_test)
+
+    def test_sets_not_empty(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        (X_cal, y_cal), (X_test, _) = make_cal_test()
+        cp.calibrate(X_cal, y_cal)
+        psets = cp.predict_set(X_test)
+        for ps in psets:
+            assert len(ps) >= 1, "Prediction sets must never be empty"
+
+    def test_sets_contain_valid_classes(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        (X_cal, y_cal), (X_test, _) = make_cal_test()
+        cp.calibrate(X_cal, y_cal)
+        psets = cp.predict_set(X_test)
+        valid_classes = set(enc.class_prototypes.keys())
+        for ps in psets:
+            for c in ps:
+                assert c in valid_classes
+
+
+# ---------------------------------------------------------------------------
+# Coverage guarantee test (the core property)
+# ---------------------------------------------------------------------------
+
+class TestCoverageGuarantee:
+    def test_marginal_coverage_holds_alpha_10(self):
+        """
+        The conformal prediction coverage guarantee:
+            P(y ∈ Ĉ(x)) ≥ 1 − α
+
+        With n_cal=100 calibration points and n_test=100 test points,
+        empirical coverage should consistently hold for α=0.10 on well-
+        separated data.  We average over multiple random seeds to reduce
+        test flakiness.
+        """
+        alpha = 0.10
+        target = 1.0 - alpha
+
+        coverages = []
+        for seed in range(8):
+            rng = np.random.default_rng(seed * 137)
+
+            # Separable blobs (classification near-perfect → conservative sets)
+            X0 = rng.standard_normal((100, 2)) + np.array([-4, 0])
+            X1 = rng.standard_normal((100, 2)) + np.array([+4, 0])
+            X_train = np.vstack([X0, X1])
+            y_train = np.array([0] * 100 + [1] * 100)
+
+            X0c = rng.standard_normal((50, 2)) + np.array([-4, 0])
+            X1c = rng.standard_normal((50, 2)) + np.array([+4, 0])
+            X_cal = np.vstack([X0c, X1c])
+            y_cal = np.array([0] * 50 + [1] * 50)
+
+            X0t = rng.standard_normal((50, 2)) + np.array([-4, 0])
+            X1t = rng.standard_normal((50, 2)) + np.array([+4, 0])
+            X_test = np.vstack([X0t, X1t])
+            y_test = np.array([0] * 50 + [1] * 50)
+
+            enc = HyperdimensionalEncoder(d=1000, n_features=2, seed=seed)
+            enc.fit(X_train, y_train)
+
+            cp = ConformalPredictor(enc, alpha=alpha)
+            cp.calibrate(X_cal, y_cal)
+            cov = cp.coverage(X_test, y_test)
+            coverages.append(cov)
+
+        mean_cov = np.mean(coverages)
+        # Coverage should hold in the vast majority of runs
+        # (all runs for separable data with large calibration sets)
+        assert mean_cov >= target, (
+            f"Mean empirical coverage {mean_cov:.3f} < {target:.2f}. "
+            f"Per-seed coverages: {coverages}"
         )
-        
-        assert predictor.window_size == 100
-        assert predictor.update_frequency == 10
-        assert len(predictor.scores_buffer) == 0
-    
-    def test_streaming_updates(self):
-        """Test streaming updates."""
-        predictor = AdaptiveConformalPredictor(
-            alpha=0.1,
-            window_size=50,
-            update_frequency=10
-        )
-        
-        # Generate streaming data
-        torch.manual_seed(42)
-        for _ in range(5):
-            predictions = torch.softmax(torch.randn(10, 3), dim=1)
-            labels = torch.randint(0, 3, (10,))
-            
-            predictor.update(predictions, labels)
-        
-        # Buffer should have data
-        assert len(predictor.scores_buffer) > 0
-        
-        # Should be able to make predictions
-        test_predictions = torch.softmax(torch.randn(5, 3), dim=1)
-        pred_sets = predictor.predict_set(test_predictions)
-        
-        assert len(pred_sets) == 5
-    
-    def test_coverage_estimation(self):
-        """Test current coverage estimation."""
-        predictor = AdaptiveConformalPredictor(alpha=0.1, window_size=100)
-        
-        # Initially no estimate
-        assert predictor.get_current_coverage_estimate() is None
-        
-        # Add some data
-        torch.manual_seed(42)
-        predictions = torch.softmax(torch.randn(50, 3), dim=1)
-        labels = torch.randint(0, 3, (50,))
-        predictor.update(predictions, labels)
-        
-        coverage_est = predictor.get_current_coverage_estimate()
-        assert coverage_est is not None
-        assert 0 <= coverage_est <= 1
+
+    def test_larger_alpha_smaller_avg_set_size(self):
+        """Larger α → less conservative → smaller average prediction sets."""
+        enc, X_train, y_train = make_trained_encoder()
+        (X_cal, y_cal), (X_test, _) = make_cal_test()
+
+        cp_tight = ConformalPredictor(enc, alpha=0.05)
+        cp_loose = ConformalPredictor(enc, alpha=0.30)
+        cp_tight.calibrate(X_cal, y_cal)
+        cp_loose.calibrate(X_cal, y_cal)
+
+        size_tight = cp_tight.avg_set_size(X_test)
+        size_loose = cp_loose.avg_set_size(X_test)
+        # Tight (small α) → should have larger or equal sets than loose
+        assert size_tight >= size_loose
 
 
-class TestRegressionConformalPredictor:
-    """Test regression conformal predictor."""
-    
-    def test_absolute_scoring(self):
-        """Test absolute residual scoring."""
-        predictor = RegressionConformalPredictor(alpha=0.1, score_type='absolute')
-        
-        predictions = torch.tensor([1.0, 2.0, 3.0])
-        labels = torch.tensor([1.1, 2.5, 2.8])
-        
-        scores = predictor.compute_nonconformity_score(predictions, labels)
-        expected_scores = torch.abs(predictions - labels)
-        
-        assert torch.allclose(scores, expected_scores)
-    
-    def test_normalized_scoring(self):
-        """Test normalized residual scoring."""
-        predictor = RegressionConformalPredictor(alpha=0.1, score_type='normalized')
-        
-        predictions = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0])
-        labels = torch.tensor([1.1, 2.2, 2.9, 4.1, 5.2])
-        
-        scores = predictor.compute_nonconformity_score(predictions, labels)
-        
-        # Should be normalized by prediction std
-        assert torch.all(scores >= 0)
-        # Exact values depend on normalization
-    
-    def test_prediction_intervals(self):
-        """Test prediction interval generation."""
-        predictor = RegressionConformalPredictor(alpha=0.2, score_type='absolute')
-        
-        # Calibrate with some data
-        cal_predictions = torch.randn(100)
-        cal_labels = cal_predictions + 0.1 * torch.randn(100)  # Add noise
-        
-        predictor.calibrate(cal_predictions, cal_labels)
-        
-        # Generate intervals
-        test_predictions = torch.tensor([1.0, 2.0, 3.0])
-        intervals = predictor.predict_set(test_predictions)
-        
-        assert len(intervals) == 3
-        for i, (lower, upper) in enumerate(intervals):
-            assert lower < upper
-            assert abs((lower + upper) / 2 - test_predictions[i].item()) < 1e-6
-    
-    def test_coverage_regression(self):
-        """Test coverage for regression intervals."""
-        torch.manual_seed(42)
-        predictor = RegressionConformalPredictor(alpha=0.1)
-        
-        # Generate synthetic regression data
-        n_samples = 500
-        true_function = lambda x: x**2 + 0.5 * x
-        
-        X = torch.randn(n_samples)
-        noise = 0.2 * torch.randn(n_samples)
-        y_true = true_function(X) + noise
-        
-        # Use true function as predictor
-        predictions = true_function(X)
-        
-        # Split for calibration and testing
-        split = n_samples // 2
-        predictor.calibrate(predictions[:split], y_true[:split])
-        
-        # Test intervals
-        test_predictions = predictions[split:]
-        test_labels = y_true[split:]
-        intervals = predictor.predict_set(test_predictions)
-        
-        # Check coverage
-        coverage = sum(
-            1 for i, (lower, upper) in enumerate(intervals)
-            if lower <= test_labels[i] <= upper
-        ) / len(intervals)
-        
-        target_coverage = 1 - predictor.alpha
-        assert abs(coverage - target_coverage) < 0.1
+# ---------------------------------------------------------------------------
+# Tests for predict and coverage helpers
+# ---------------------------------------------------------------------------
+
+class TestHelpers:
+    def test_predict_returns_array(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        (X_cal, y_cal), (X_test, _) = make_cal_test()
+        cp.calibrate(X_cal, y_cal)
+        preds = cp.predict(X_test)
+        assert preds.shape == (len(X_test),)
+
+    def test_coverage_returns_float(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        (X_cal, y_cal), (X_test, y_test) = make_cal_test()
+        cp.calibrate(X_cal, y_cal)
+        cov = cp.coverage(X_test, y_test)
+        assert 0.0 <= cov <= 1.0
+
+    def test_avg_set_size_range(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        (X_cal, y_cal), (X_test, _) = make_cal_test()
+        cp.calibrate(X_cal, y_cal)
+        avg = cp.avg_set_size(X_test)
+        assert 1.0 <= avg <= 2.0  # binary classification
+
+    def test_repr(self):
+        enc, _, _ = make_trained_encoder()
+        cp = ConformalPredictor(enc, alpha=0.1)
+        s = repr(cp)
+        assert "0.1" in s
+        assert "not calibrated" in s
+        (X_cal, y_cal), _ = make_cal_test()
+        cp.calibrate(X_cal, y_cal)
+        s2 = repr(cp)
+        assert "q_hat" in s2
